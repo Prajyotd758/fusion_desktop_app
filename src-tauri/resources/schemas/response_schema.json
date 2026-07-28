@@ -1,0 +1,88 @@
+{
+  "type": "json_schema",
+  "json_schema": {
+    "name": "airgrip_response",
+    "strict": true,
+    "schema": {
+      "type": "object",
+      "properties": {
+        "intent": {
+          "type": "string",
+          "enum": ["system", "chat", "error"]
+        },
+        "response": {
+          "type": "string"
+        },
+        "operations": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "action": {
+                "type": "string",
+                "enum": [
+                  "create_folder",
+                  "open_folder",
+                  "create_file",
+                  "open_file",
+                  "delete_folder",
+                  "delete_file",
+                  "rename_folder",
+                  "rename_file",
+                  "move_folder",
+                  "move_file",
+                  "copy_folder",
+                  "copy_file",
+                  "open_app",
+                  "close_app"
+                ]
+              },
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "location": {
+                    "type": "string",
+                    "required": true
+                  },
+                  "parent": {
+                    "type": "string"
+                  },
+                  "path": {
+                    "type": "string"
+                  },
+                  "extension": {
+                    "type": "string"
+                  },
+                  "new_name": {
+                    "type": "string"
+                  },
+                  "source": {
+                    "type": "string"
+                  },
+                  "destination": {
+                    "type": "string"
+                  }
+                },
+                "required": ["name", "location"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["action", "parameters"],
+            "additionalProperties": false
+          }
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      },
+      "required": ["intent", "response", "operations", "confidence"],
+      "additionalProperties": false
+    }
+  }
+}

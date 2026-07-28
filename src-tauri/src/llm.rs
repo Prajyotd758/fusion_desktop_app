@@ -1,0 +1,56 @@
+use anyhow::{anyhow, Result};
+use reqwest::Client;
+use serde_json::{json, Value};
+
+pub async fn interpret_command(transcript: &str) -> Result<String> {
+    let client = Client::new();
+
+    // Get cached resources (loaded once during app startup)
+    let resources = crate::resources::get();
+
+    let system_prompt = &resources.system_prompt;
+    let response_schema = &resources.response_schema;
+
+    let response = client
+        .post("http://127.0.0.1:8081/v1/chat/completions")
+        .json(&json!({
+            "model": "qwen2.5",
+
+            "messages": [
+                {
+                    "role": "system",
+                    "content": system_prompt
+                },
+                {
+                    "role": "user",
+                    "content": transcript
+                }
+            ],
+
+            "temperature": 0.0,
+            "top_p": 1.0,
+            "stream": false,
+
+            "response_format": response_schema
+        }))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!("LLM returned {}", response.status()));
+    }
+
+    let json: Value = response.json().await?;
+
+    println!(
+        "\n========== LLM RESPONSE ==========\n{}\n==================================\n",
+        serde_json::to_string_pretty(&json)?
+    );
+
+    let content = json["choices"][0]["message"]["content"]
+        .as_str()
+        .ok_or_else(|| anyhow!("LLM returned empty content"))?
+        .to_string();
+
+    Ok(content)
+}
