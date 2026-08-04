@@ -13,7 +13,7 @@ pub async fn transcribe() -> Result<String> {
 
     let form = multipart::Form::new()
         .part("file", part)
-        .text("language", "auto") // <-- was missing entirely
+        .text("language", "mr") // <-- was missing entirely
         .text("temperature", "0.0");
     let response = client
         .post("http://127.0.0.1:8080/inference")

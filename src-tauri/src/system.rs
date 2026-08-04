@@ -1,3 +1,4 @@
+use crate::tts;
 use enigo::{
     Direction::{Click, Press, Release},
     Enigo, Key, Keyboard, Settings,
@@ -12,7 +13,9 @@ use std::thread;
 use std::time::Duration;
 use strsim::normalized_levenshtein;
 
-use crate::tts;
+//sub modules
+mod app_context;
+mod helper_functions;
 
 #[derive(Deserialize)]
 struct LlmResponse {
@@ -74,7 +77,8 @@ fn get_last_folder() -> Option<PathBuf> {
     LAST_FOLDER.get().and_then(|m| m.lock().unwrap().clone())
 }
 
-fn get_focused_explorer_path() -> Option<PathBuf> {
+#[tauri::command]
+pub fn get_focused_explorer_path() -> Option<PathBuf> {
     let output = Command::new("powershell")
         .args([
             "-NoProfile",
@@ -108,6 +112,8 @@ foreach ($window in $shell.Windows()) {
     }
 
     let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    eprintln!("Focused Explorer path detected: {path}");
+
     if path.is_empty() {
         None
     } else {
@@ -285,12 +291,33 @@ fn execute_operation(op: &Operation, known: &mut HashMap<String, PathBuf>) -> Re
             }
             Ok(())
         }
+        "open_app_in_folder" => {
+            let name = sanitize_name(&p.name);
+            if name.is_empty() {
+                return Err("no app name given".into());
+            }
+            let folder = resolve_base(p, known);
+            app_context::open_app_in_folder(&name, &folder)?; // no `crate::` prefix needed
+            Ok(())
+        }
         "delete_folder" => {
             let path = resolve_target(p, known);
+            if helper_functions::is_dangerous(&path) {
+                return Err(format!(
+                    "Refusing to delete protected path: {}",
+                    path.display()
+                ));
+            }
             fs::remove_dir_all(&path).map_err(|e| e.to_string())
         }
         "delete_file" => {
             let path = resolve_target(p, known);
+            if helper_functions::is_dangerous(&path) {
+                return Err(format!(
+                    "Refusing to delete protected path: {}",
+                    path.display()
+                ));
+            }
             fs::remove_file(&path).map_err(|e| e.to_string())
         }
         "rename_folder" | "rename_file" => {
@@ -484,6 +511,20 @@ fn handle_open_app(text: &str) -> Option<String> {
     let raw_target = text[idx + "open ".len()..].trim();
     if raw_target.is_empty() {
         return None;
+    }
+
+    // New: handle "this file" / "selected file" / bare "file"
+    if matches!(
+        raw_target,
+        "this file" | "selected file" | "file" | "this" | "selected item" | "it"
+    ) {
+        if let Some(path) = helper_functions::get_selected_explorer_item() {
+            return match open_with_shell(&path) {
+                Ok(_) => Some(format!("Opening {}", path.display())),
+                Err(e) => Some(format!("Command failed: {e}")),
+            };
+        }
+        return Some("No file selected".into());
     }
 
     if let Some(name) = raw_target.strip_prefix("folder ") {

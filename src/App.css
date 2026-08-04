@@ -32,10 +32,19 @@ body {
   pointer-events: none;
 }
 
+.top-bar {
+  position: absolute;
+  top: 28px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+}
+
 .shell {
   position: relative;
-  width: 420px;
+  max-width: 420px;
   padding: 40px 36px 36px;
+  margin: 0px 24px;
   border-radius: 24px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.01));
   border: 1px solid rgba(139, 92, 246, 0.18);

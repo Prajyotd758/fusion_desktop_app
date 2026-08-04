@@ -1,0 +1,127 @@
+.llm-selector {
+  position: relative;
+  display: inline-flex;
+}
+
+.llm-selector-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(139, 92, 246, 0.18);
+  color: #ece9ff;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.llm-selector-trigger:hover,
+.llm-selector-trigger.open {
+  border-color: rgba(139, 92, 246, 0.4);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.llm-chevron {
+  color: #8b83b8;
+  transition: transform 0.2s ease;
+  margin-left: 2px;
+}
+
+.llm-selector-trigger.open .llm-chevron {
+  transform: rotate(180deg);
+}
+
+.llm-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.llm-dot[data-choice="local"] {
+  background: #60a5fa;
+  box-shadow: 0 0 6px rgba(96, 165, 250, 0.7);
+}
+.llm-dot[data-choice="claude"] {
+  background: #c4b5fd;
+  box-shadow: 0 0 6px rgba(196, 181, 253, 0.7);
+}
+.llm-dot[data-choice="open_ai"] {
+  background: #34d399;
+  box-shadow: 0 0 6px rgba(52, 211, 153, 0.7);
+}
+.llm-dot[data-choice="none"] {
+  background: #7c8bab;
+  box-shadow: none;
+}
+
+.llm-selector-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  min-width: 140px;
+  padding: 6px;
+  border-radius: 14px;
+  background: rgba(14, 10, 31, 0.95);
+  border: 1px solid rgba(139, 92, 246, 0.2);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: menu-in 0.15s ease;
+}
+
+.selector-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+.llm-selector-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-radius: 9px;
+  background: transparent;
+  border: none;
+  color: #cfc9f0;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.llm-selector-option:hover {
+  background: rgba(139, 92, 246, 0.12);
+}
+
+.llm-selector-option.selected {
+  color: #f4f2ff;
+}
+
+.llm-check {
+  margin-left: auto;
+  color: #a78bfa;
+}

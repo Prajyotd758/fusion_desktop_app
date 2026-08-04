@@ -23,6 +23,7 @@
                 "enum": [
                   "create_folder",
                   "open_folder",
+                  "open_app_in_folder",
                   "create_file",
                   "open_file",
                   "delete_folder",
@@ -41,12 +42,10 @@
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string",
-                    "required": true
+                    "type": "string"
                   },
                   "location": {
-                    "type": "string",
-                    "required": true
+                    "type": "string"
                   },
                   "parent": {
                     "type": "string"

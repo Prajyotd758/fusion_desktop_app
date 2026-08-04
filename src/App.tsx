@@ -2,6 +2,7 @@ import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
+import LlmSelector from "./components/OptionSelector";
 import "./App.css";
 
 function App() {
@@ -51,8 +52,24 @@ function App() {
     <div className="app">
       <div className="bg-glow" />
 
+      <div className="top-bar">
+        <LlmSelector />
+      </div>
+
       <div className="shell">
-        <header className="header">
+        <div className={`transcript ${text ? "visible" : ""}`}>
+          <span className="transcript-label">Last response</span>
+          <p>{text || "Your command output will appear here."}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
+
+{
+  /* <header className="header">
           <span className="logo-dot" />
           <h1>Arceus Assistant</h1>
 
@@ -68,15 +85,5 @@ function App() {
             <li>executing command via api from online llm like gpt,claude</li>
             <li>connecting to users openai/anthropic account</li>
           </ul>
-        </header>
-
-        <div className={`transcript ${text ? "visible" : ""}`}>
-          <span className="transcript-label">Last response</span>
-          <p>{text || "Your command output will appear here."}</p>
-        </div>
-      </div>
-    </div>
-  );
+        </header> */
 }
-
-export default App;
