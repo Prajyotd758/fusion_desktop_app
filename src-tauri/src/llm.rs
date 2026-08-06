@@ -1,9 +1,19 @@
+use crate::system::helper_functions::get_focused_app;
 use anyhow::{anyhow, Result};
 use reqwest::Client;
 use serde_json::{json, Value};
 
 pub async fn interpret_command(transcript: &str) -> Result<String> {
     let client = Client::new();
+
+    let context_line = match get_focused_app() {
+        Some((process, title)) => format!(
+            "Currently focused app: {process} (\"{title}\"). If the user's request needs an app-specific keyboard shortcut, use your own knowledge of that app's shortcuts and issue it via 'press_keys' with the raw combo (e.g. ctrl+`, ctrl+shift+p)."
+        ),
+        None => "No focused app detected".to_string(),
+    };
+
+    let full_prompt = format!("{context_line}\n\nUser command: {transcript}");
 
     // Get cached resources (loaded once during app startup)
     let resources = crate::resources::get();
@@ -23,7 +33,7 @@ pub async fn interpret_command(transcript: &str) -> Result<String> {
                 },
                 {
                     "role": "user",
-                    "content": transcript
+                    "content": full_prompt
                 }
             ],
 

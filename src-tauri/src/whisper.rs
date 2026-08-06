@@ -2,9 +2,9 @@ use anyhow::Result;
 use reqwest::multipart;
 use std::fs;
 
-pub async fn transcribe() -> Result<String> {
+pub async fn transcribe(language: &str) -> Result<String> {
+    println!("language : {}", language.to_string());
     let client = reqwest::Client::new();
-
     let audio = fs::read("../../data/audio/latest.wav")?;
 
     let part = multipart::Part::bytes(audio)
@@ -13,8 +13,9 @@ pub async fn transcribe() -> Result<String> {
 
     let form = multipart::Form::new()
         .part("file", part)
-        .text("language", "mr") // <-- was missing entirely
+        .text("language", language.to_string())
         .text("temperature", "0.0");
+
     let response = client
         .post("http://127.0.0.1:8080/inference")
         .multipart(form)

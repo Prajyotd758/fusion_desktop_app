@@ -12,9 +12,12 @@ pub fn start_whisper_server() {
     if server.is_none() {
         match Command::new("../../whisper.cpp/build/bin/Release/whisper-server.exe")
             .args([
-                "-m", "../../models/ggml-model-turbo.bin",
-                "--host", "127.0.0.1",
-                "--port", "8080",
+                "-m",
+                "../../models/ggml-small.bin",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "8080",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -36,10 +39,14 @@ pub fn start_llama_server() {
     if server.is_none() {
         match Command::new("../../llama.cpp/build-vulkan/bin/Release/llama-server.exe")
             .args([
-                "-m", "../../models/qwen2.5-3b-instruct-q4_K_M.gguf",
-                "--port", "8081",
-                "-c", "2048",
-                "-ngl", "20",
+                "-m",
+                "../../models/qwen2.5-3b-instruct-q4_K_M.gguf",
+                "--port",
+                "8081",
+                "-c",
+                "2048",
+                "-ngl",
+                "20",
             ])
             .stdout(Stdio::null())
             .stderr(Stdio::null())

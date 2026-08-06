@@ -147,15 +147,21 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                                 tauri::async_runtime::spawn(async move {
                                     // Pull current llm_choice + api_keys from persisted settings
                                     // right before running the transcription pipeline.
-                                    let (llm_choice, keys) = {
+                                    let (llm_choice, keys, language) = {
                                         let settings_state =
                                             app_clone.state::<crate::settings::SettingsState>();
                                         let settings = settings_state.0.lock().unwrap();
-                                        (settings.llm_choice, settings.api_keys.clone())
+                                        (
+                                            settings.llm_choice,
+                                            settings.api_keys.clone(),
+                                            settings.current_language().to_string(),
+                                        )
                                     };
 
-                                    match crate::commands::run_transcribe_only(llm_choice, &keys)
-                                        .await
+                                    match crate::commands::run_transcribe_only(
+                                        llm_choice, &keys, &language,
+                                    )
+                                    .await
                                     {
                                         Ok(result) => {
                                             let _ = app_clone.emit("command-result", result);
@@ -202,6 +208,7 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
         }
     }
 }
+
 // ---------------------------------------------------------------------
 // Keyboard trigger path: cpal-based recording, controlled via shortcut
 // ---------------------------------------------------------------------

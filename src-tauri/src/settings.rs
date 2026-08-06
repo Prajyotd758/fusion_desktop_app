@@ -2,41 +2,12 @@
 // Single source of truth for all persisted app settings.
 // One JSON file on disk, one struct in memory, wrapped in a Mutex for Tauri state.
 
-use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
 use tauri::Manager;
 
-use crate::state::LlmChoice;
-use crate::llm_provider::ApiKeys;
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AppSettings {
-    #[serde(default)]
-    pub llm_choice: LlmChoice,
-
-    #[serde(default)]
-    pub api_keys: ApiKeys,
-
-    #[serde(default)]
-    pub custom_keywords: Vec<String>, // extend with your actual keyword struct later
-
-    #[serde(default)]
-    pub shortcut: Option<String>, // e.g. "Ctrl+Alt+Shift+9", None = use hardcoded default
-    // Add more fields here as you build features — they all live in the same file.
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            llm_choice: LlmChoice::default(),
-            api_keys: ApiKeys::default(),
-            custom_keywords: Vec::new(),
-            shortcut: None,
-        }
-    }
-}
+use crate::system::types::AppSettings;
 
 fn settings_file_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;

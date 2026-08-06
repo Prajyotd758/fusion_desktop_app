@@ -12,14 +12,14 @@ mod whisper_server;
 use audio::AudioState;
 use settings::SettingsState;
 use state::{
-    get_current_language, get_llm_choice, set_llm_choice, set_selected_languages, toggle_language,
-    LanguageState,
+    get_current_language, get_llm_choice, set_current_language, set_llm_choice,
+    set_selected_languages, toggle_language,
 };
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 mod resources;
-use crate::system::get_focused_explorer_path;
+use crate::system::helper_functions::get_focused_explorer_path;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,7 +29,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(AudioState::new())
-        .manage(Mutex::new(state::LanguageState::default()))
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             // Load persisted settings (llm_choice, api_keys, etc.) once at startup.
@@ -70,13 +69,18 @@ pub fn run() {
 
                             // Pull the current llm_choice + api_keys from persisted settings
                             // right before running the transcription pipeline.
-                            let (llm_choice, keys) = {
+                            let (llm_choice, keys, language) = {
                                 let settings_state = handle.state::<SettingsState>();
                                 let settings = settings_state.0.lock().unwrap();
-                                (settings.llm_choice, settings.api_keys.clone())
+                                (
+                                    settings.llm_choice,
+                                    settings.api_keys.clone(),
+                                    settings.current_language().to_string(),
+                                )
                             };
-
-                            match commands::run_transcribe_only(llm_choice, &keys).await {
+                            
+                            match commands::run_transcribe_only(llm_choice, &keys, &language).await
+                            {
                                 Ok(result) => {
                                     eprintln!("[shortcut] result: {result}");
                                     let _ = handle.emit("command-result", result);
@@ -93,6 +97,7 @@ pub fn run() {
             get_current_language,
             toggle_language,
             set_selected_languages,
+            set_current_language,
             get_focused_explorer_path,
             set_llm_choice,
             get_llm_choice,

@@ -38,8 +38,14 @@ pub fn is_valid_transcript(text: &str) -> bool {
     true
 }
 
-pub async fn run_transcribe_only(llm_choice: LlmChoice, keys: &ApiKeys) -> Result<String, String> {
-    let text = whisper::transcribe().await.map_err(|e| e.to_string())?;
+pub async fn run_transcribe_only(
+    llm_choice: LlmChoice,
+    keys: &ApiKeys,
+    language: &str,
+) -> Result<String, String> {
+    let text = whisper::transcribe(language)
+        .await
+        .map_err(|e| e.to_string())?;
     println!("Transcript: {}", text);
 
     if !is_valid_transcript(&text) {

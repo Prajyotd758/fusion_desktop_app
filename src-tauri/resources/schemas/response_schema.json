@@ -35,7 +35,9 @@
                   "copy_folder",
                   "copy_file",
                   "open_app",
-                  "close_app"
+                  "close_app",
+                  "press_keys",
+                  "type"
                 ]
               },
               "parameters": {
@@ -63,6 +65,12 @@
                     "type": "string"
                   },
                   "destination": {
+                    "type": "string"
+                  },
+                  "text": {
+                    "type": "string"
+                  },
+                  "keys": {
                     "type": "string"
                   }
                 },
