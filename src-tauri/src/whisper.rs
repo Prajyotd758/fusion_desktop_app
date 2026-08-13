@@ -1,35 +1,21 @@
+use crate::whisper_engine::WhisperState;
 use anyhow::Result;
-use reqwest::multipart;
-use std::fs;
+use tauri::Manager;
 
-pub async fn transcribe(language: &str) -> Result<String> {
-    println!("language : {}", language.to_string());
-    let client = reqwest::Client::new();
-    let audio = fs::read("../../data/audio/latest.wav")?;
+pub async fn transcribe(
+    app: &tauri::AppHandle,
+    samples: Vec<f32>,
+    language: &str,
+) -> Result<String> {
+    let language = language.to_string();
+    let state = app.state::<WhisperState>();
+    let engine_arc = state.0.clone();
 
-    let part = multipart::Part::bytes(audio)
-        .file_name("latest.wav")
-        .mime_str("audio/wav")?;
-
-    let form = multipart::Form::new()
-        .part("file", part)
-        .text("language", language.to_string())
-        .text("temperature", "0.0");
-
-    let response = client
-        .post("http://127.0.0.1:8080/inference")
-        .multipart(form)
-        .send()
-        .await?;
-
-    let status = response.status();
-    let raw = response.text().await?;
-
-    println!("status: {}", status);
-    println!("raw body: {}", raw);
-
-    let json: serde_json::Value = serde_json::from_str(&raw)?;
-    let text = json["text"].as_str().unwrap_or("").trim().to_string();
+    let text = tauri::async_runtime::spawn_blocking(move || {
+        let engine = engine_arc.lock().unwrap();
+        engine.transcribe(&samples, &language)
+    })
+    .await??;
 
     println!("text : {}", text);
     Ok(text)

@@ -52,11 +52,6 @@ pub async fn interpret_command(transcript: &str) -> Result<String> {
 
     let json: Value = response.json().await?;
 
-    println!(
-        "\n========== LLM RESPONSE ==========\n{}\n==================================\n",
-        serde_json::to_string_pretty(&json)?
-    );
-
     let content = json["choices"][0]["message"]["content"]
         .as_str()
         .ok_or_else(|| anyhow!("LLM returned empty content"))?

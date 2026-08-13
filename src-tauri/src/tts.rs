@@ -18,10 +18,6 @@ pub fn speak(text: &str) -> Result<()> {
     // Store generated audio in the temp directory
     let output = std::env::temp_dir().join("fusion_response.wav");
 
-    println!("Piper: {:?}", piper);
-    println!("Model: {:?}", model);
-    println!("Output: {:?}", output);
-
     // Launch Piper
     let mut child = Command::new(&piper)
         .arg("--model")
@@ -42,16 +38,6 @@ pub fn speak(text: &str) -> Result<()> {
     let output_result = child.wait_with_output()?;
 
     if !output_result.status.success() {
-        println!(
-            "Piper stderr:\n{}",
-            String::from_utf8_lossy(&output_result.stderr)
-        );
-
-        println!(
-            "Piper stdout:\n{}",
-            String::from_utf8_lossy(&output_result.stdout)
-        );
-
         bail!("Piper failed to generate speech.");
     }
     // Play the generated WAV

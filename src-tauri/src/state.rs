@@ -39,47 +39,6 @@ pub fn get_llm_choice(state: tauri::State<SettingsState>) -> Result<LlmChoice, S
     Ok(settings.llm_choice)
 }
 
-/// Holds the 3 user-selected language codes and which one is currently active.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct LanguageState {
-    pub selected_languages: [String; 3], // e.g. ["en", "hi", "mr"]
-    pub current_index: usize,
-}
-
-impl Default for LanguageState {
-    fn default() -> Self {
-        Self {
-            selected_languages: ["en".into(), "hi".into(), "mr".into()],
-            current_index: 0,
-        }
-    }
-}
-
-impl LanguageState {
-    pub fn current(&self) -> &str {
-        &self.selected_languages[self.current_index]
-    }
-
-    pub fn toggle(&mut self) -> &str {
-        self.current_index = (self.current_index + 1) % 3;
-        self.current()
-    }
-
-    pub fn set_languages(&mut self, langs: [String; 3]) {
-        self.selected_languages = langs;
-        self.current_index = 0;
-    }
-
-    pub fn set_current(&mut self, lang_code: &str) -> bool {
-        if let Some(idx) = self.selected_languages.iter().position(|l| l == lang_code) {
-            self.current_index = idx;
-            true
-        } else {
-            false
-        }
-    }
-}
-
 #[tauri::command]
 pub fn get_current_language(state: tauri::State<SettingsState>) -> Result<String, String> {
     let settings = state.0.lock().map_err(|e| e.to_string())?;

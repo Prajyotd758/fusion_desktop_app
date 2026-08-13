@@ -17,10 +17,10 @@ struct RecordingHandle {
 }
 
 pub struct AudioState {
-    /// Shared flag: true whenever EITHER the mouse (serial) or keyboard (cpal) path is recording.
     pub recording: AtomicBool,
-    /// Only used by the keyboard/cpal path.
     cpal_handle: Mutex<Option<RecordingHandle>>,
+    /// Shared f32 mono 16kHz buffer, filled by whichever path is active.
+    pub samples: Arc<Mutex<Vec<f32>>>,
 }
 
 impl AudioState {
@@ -28,6 +28,7 @@ impl AudioState {
         Self {
             recording: AtomicBool::new(false),
             cpal_handle: Mutex::new(None),
+            samples: Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -36,14 +37,18 @@ pub fn is_recording(state: &AudioState) -> bool {
     state.recording.load(Ordering::SeqCst)
 }
 
+/// Call after STOP to grab and clear the buffer.
+pub fn take_samples(state: &AudioState) -> Vec<f32> {
+    std::mem::take(&mut *state.samples.lock().unwrap())
+}
+
 // ---------------------------------------------------------------------
-// Mouse trigger path: ESP32 over serial (START/STOP + binary PCM frames)
+// Mouse trigger path: ESP32 over serial (already 16kHz mono i16 PCM)
 // ---------------------------------------------------------------------
 
 pub fn start_serial_listener(app: AppHandle) {
     std::thread::spawn(move || loop {
         let Some(port_name) = crate::find_serial::find_airgrip_port() else {
-            // eprintln!("[serial] AirGrip not found, retrying...");
             std::thread::sleep(std::time::Duration::from_secs(2));
             continue;
         };
@@ -53,7 +58,6 @@ pub fn start_serial_listener(app: AppHandle) {
             .open()
         {
             Ok(mut port) => {
-                eprintln!("[serial] connected to {}", port_name);
                 let _ = port.write_data_terminal_ready(true);
                 let _ = port.write_request_to_send(true);
                 std::thread::sleep(std::time::Duration::from_millis(500));
@@ -71,8 +75,6 @@ pub fn start_serial_listener(app: AppHandle) {
 
 fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Result<()> {
     let mut port = port;
-
-    let mut writer: Option<hound::WavWriter<std::io::BufWriter<std::fs::File>>> = None;
     let mut line_buf: Vec<u8> = Vec::new();
 
     let mut byte = [0u8; 1];
@@ -103,50 +105,30 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
 
                             if line == "START" {
                                 let state_handle = app.state::<AudioState>();
-
-                                // Guard: don't start if the keyboard/cpal path already owns recording.
                                 if state_handle.recording.swap(true, Ordering::SeqCst) {
-                                    eprintln!("[serial] START ignored, already recording (possibly via shortcut)");
+                                    eprintln!("[serial] START ignored, already recording");
                                     continue;
                                 }
-
-                                let spec = hound::WavSpec {
-                                    channels: 1,
-                                    sample_rate: SAMPLE_RATE,
-                                    bits_per_sample: 16,
-                                    sample_format: hound::SampleFormat::Int,
-                                };
-                                match hound::WavWriter::create("../../data/audio/latest.wav", spec)
-                                {
-                                    Ok(w) => writer = Some(w),
-                                    Err(e) => {
-                                        eprintln!("[serial] failed to create WAV writer: {e}");
-                                        state_handle.recording.store(false, Ordering::SeqCst);
-                                    }
-                                }
+                                state_handle.samples.lock().unwrap().clear();
                                 total_samples = 0;
                             } else if line == "STOP" {
                                 let state_handle = app.state::<AudioState>();
                                 state_handle.recording.store(false, Ordering::SeqCst);
 
-                                if let Some(w) = writer.take() {
-                                    println!("Total samples written = {}", total_samples);
-                                    println!(
-                                        "Expected duration = {:.2} sec",
-                                        total_samples as f32 / SAMPLE_RATE as f32
-                                    );
-                                    w.finalize().ok();
-                                }
+                                println!("Total samples written = {}", total_samples);
+                                println!(
+                                    "Expected duration = {:.2} sec",
+                                    total_samples as f32 / SAMPLE_RATE as f32
+                                );
 
                                 if total_samples == 0 {
                                     eprintln!("[serial] zero-sample session, skipping transcribe");
                                     continue;
                                 }
 
+                                let samples = take_samples(&state_handle);
                                 let app_clone = app.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    // Pull current llm_choice + api_keys from persisted settings
-                                    // right before running the transcription pipeline.
                                     let (llm_choice, keys, language) = {
                                         let settings_state =
                                             app_clone.state::<crate::settings::SettingsState>();
@@ -159,7 +141,7 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                                     };
 
                                     match crate::commands::run_transcribe_only(
-                                        llm_choice, &keys, &language,
+                                        &app_clone, llm_choice, &keys, &language, samples,
                                     )
                                     .await
                                     {
@@ -190,12 +172,12 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                     3 => {
                         payload.push(b);
                         if payload.len() == payload_len {
-                            if let Some(w) = writer.as_mut() {
-                                for chunk in payload.chunks_exact(2) {
-                                    let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
-                                    w.write_sample(sample).ok();
-                                    total_samples += 1;
-                                }
+                            let state_handle = app.state::<AudioState>();
+                            let mut buf = state_handle.samples.lock().unwrap();
+                            for chunk in payload.chunks_exact(2) {
+                                let sample = i16::from_le_bytes([chunk[0], chunk[1]]);
+                                buf.push(sample as f32 / i16::MAX as f32);
+                                total_samples += 1;
                             }
                             state = 0;
                         }
@@ -210,11 +192,10 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
 }
 
 // ---------------------------------------------------------------------
-// Keyboard trigger path: cpal-based recording, controlled via shortcut
+// Keyboard trigger path: cpal-based recording
 // ---------------------------------------------------------------------
 
 pub fn start_recording(state: &AudioState) -> Result<()> {
-    // Guard: don't start if serial/mouse path already owns recording.
     if state.recording.swap(true, Ordering::SeqCst) {
         return Err(anyhow!("Recording already in progress"));
     }
@@ -224,6 +205,9 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
         state.recording.store(false, Ordering::SeqCst);
         return Err(anyhow!("Recording already in progress"));
     }
+
+    state.samples.lock().unwrap().clear();
+    let samples_buf = state.samples.clone();
 
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
     let (done_tx, done_rx) = mpsc::channel::<Result<(), String>>();
@@ -235,78 +219,87 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
                 .default_input_device()
                 .ok_or_else(|| anyhow!("No input device found"))?;
             let config = device.default_input_config()?;
+            let channels = config.channels() as usize;
+            let src_rate = config.sample_rate().0;
 
-            let spec = hound::WavSpec {
-                channels: config.channels(),
-                sample_rate: config.sample_rate().0,
-                bits_per_sample: 16,
-                sample_format: hound::SampleFormat::Int,
-            };
+            if src_rate != SAMPLE_RATE {
+                eprintln!(
+                    "[cpal] WARNING: mic rate {}Hz != {}Hz, whisper needs resampling (TODO: rubato)",
+                    src_rate, SAMPLE_RATE
+                );
+            }
 
-            let writer = Arc::new(Mutex::new(Some(hound::WavWriter::create(
-                "../../data/audio/latest.wav",
-                spec,
-            )?)));
-            let writer_clone = writer.clone();
             let err_fn = |err| eprintln!("Stream error: {}", err);
 
+            let push = move |mono: Vec<f32>, buf: &Arc<Mutex<Vec<f32>>>| {
+                buf.lock().unwrap().extend(mono);
+            };
+
             let stream = match config.sample_format() {
-                SampleFormat::F32 => device.build_input_stream(
-                    &config.clone().into(),
-                    move |data: &[f32], _| {
-                        let mut w = writer_clone.lock().unwrap();
-                        if let Some(w) = w.as_mut() {
-                            for &sample in data {
-                                let s = (sample.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-                                w.write_sample(s).ok();
-                            }
-                        }
-                    },
-                    err_fn,
-                    None,
-                )?,
-                SampleFormat::I16 => device.build_input_stream(
-                    &config.clone().into(),
-                    move |data: &[i16], _| {
-                        let mut w = writer_clone.lock().unwrap();
-                        if let Some(w) = w.as_mut() {
-                            for &sample in data {
-                                w.write_sample(sample).ok();
-                            }
-                        }
-                    },
-                    err_fn,
-                    None,
-                )?,
-                SampleFormat::U16 => device.build_input_stream(
-                    &config.clone().into(),
-                    move |data: &[u16], _| {
-                        let mut w = writer_clone.lock().unwrap();
-                        if let Some(w) = w.as_mut() {
-                            for &sample in data {
-                                let s = (sample as i32 - 32768) as i16;
-                                w.write_sample(s).ok();
-                            }
-                        }
-                    },
-                    err_fn,
-                    None,
-                )?,
+                SampleFormat::F32 => {
+                    let buf = samples_buf.clone();
+                    device.build_input_stream(
+                        &config.clone().into(),
+                        move |data: &[f32], _| {
+                            let mono: Vec<f32> = data
+                                .chunks_exact(channels)
+                                .map(|frame| frame.iter().sum::<f32>() / channels as f32)
+                                .collect();
+                            push(mono, &buf);
+                        },
+                        err_fn,
+                        None,
+                    )?
+                }
+                SampleFormat::I16 => {
+                    let buf = samples_buf.clone();
+                    device.build_input_stream(
+                        &config.clone().into(),
+                        move |data: &[i16], _| {
+                            let mono: Vec<f32> = data
+                                .chunks_exact(channels)
+                                .map(|frame| {
+                                    frame.iter().map(|&s| s as f32).sum::<f32>()
+                                        / channels as f32
+                                        / i16::MAX as f32
+                                })
+                                .collect();
+                            push(mono, &buf);
+                        },
+                        err_fn,
+                        None,
+                    )?
+                }
+                SampleFormat::U16 => {
+                    let buf = samples_buf.clone();
+                    device.build_input_stream(
+                        &config.clone().into(),
+                        move |data: &[u16], _| {
+                            let mono: Vec<f32> = data
+                                .chunks_exact(channels)
+                                .map(|frame| {
+                                    frame
+                                        .iter()
+                                        .map(|&s| (s as i32 - 32768) as f32)
+                                        .sum::<f32>()
+                                        / channels as f32
+                                        / i16::MAX as f32
+                                })
+                                .collect();
+                            push(mono, &buf);
+                        },
+                        err_fn,
+                        None,
+                    )?
+                }
                 _ => return Err(anyhow!("Unsupported sample format")),
             };
 
             stream.play()?;
             println!("Recording started...");
-
             let _ = stop_rx.recv();
             drop(stream);
-
-            let mut w = writer.lock().unwrap();
-            if let Some(w) = w.take() {
-                w.finalize()?;
-            }
-
-            println!("Recording stopped, saved to latest.wav");
+            println!("Recording stopped, samples buffered in memory");
             Ok(())
         })();
 

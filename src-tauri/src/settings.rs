@@ -35,12 +35,10 @@ pub fn load(app: &tauri::AppHandle) -> AppSettings {
         Ok(raw) => match serde_json::from_str(&raw) {
             Ok(settings) => settings,
             Err(e) => {
-                eprintln!("Settings file corrupt, using defaults: {e}");
                 AppSettings::default()
             }
         },
         Err(e) => {
-            eprintln!("Could not read settings file, using defaults: {e}");
             AppSettings::default()
         }
     }

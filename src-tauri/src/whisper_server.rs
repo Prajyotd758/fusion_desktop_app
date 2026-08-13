@@ -13,7 +13,7 @@ pub fn start_whisper_server() {
         match Command::new("../../whisper.cpp/build/bin/Release/whisper-server.exe")
             .args([
                 "-m",
-                "../../models/ggml-small.bin",
+                "../../models/ggml-base.bin",
                 "--host",
                 "127.0.0.1",
                 "--port",

@@ -2,7 +2,6 @@ use crate::system::helper_functions::{
     get_selected_explorer_item, open_with_shell, set_last_folder, workspace_candidates,
 };
 use crate::system::path_resolver::{find_best_match, sanitize_name};
-use crate::tts;
 use enigo::{
     Direction::{Click, Press, Release},
     Enigo, Key, Keyboard, Settings,
@@ -38,8 +37,6 @@ pub fn execute(text: &str) -> Option<String> {
         return None;
     }
 
-    println!("getting executed by rust handler");
-
     if let Some(r) = handle_open_and_type(text) {
         return Some(r);
     }
@@ -61,8 +58,7 @@ pub fn execute(text: &str) -> Option<String> {
     if let Some(r) = handle_key_press(text) {
         return Some(r);
     }
-
-    println!("returning none by rust handler");
+    
     None
 }
 
@@ -167,7 +163,6 @@ fn handle_key_press(text: &str) -> Option<String> {
 
     if text.contains("select all") {
         press_combo(&mut enigo, Key::Control, Key::Unicode('a'));
-        let _ = tts::speak("Selecetd ");
         return Some("Selected all".into());
     }
 
@@ -185,15 +180,12 @@ fn handle_key_press(text: &str) -> Option<String> {
         ("Delete", Key::Delete)
     } else if has("copy") {
         press_combo(&mut enigo, Key::Control, Key::Unicode('c'));
-        let _ = tts::speak("Copied ");
         return Some("Copied".into());
     } else if has("paste") {
         press_combo(&mut enigo, Key::Control, Key::Unicode('v'));
-        let _ = tts::speak("Pasted ");
         return Some("Pasted".into());
     } else if has("save") {
         press_combo(&mut enigo, Key::Control, Key::Unicode('s'));
-        let _ = tts::speak("Saved ");
         return Some("Saved".into());
     } else {
         return None;

@@ -5,6 +5,7 @@ use crate::system::helper_functions::{
 };
 use crate::system::path_resolver::{resolve_base, resolve_named, resolve_target, sanitize_name};
 use crate::system::types::{LlmResponse, Operation};
+use crate::tts;
 use enigo::{
     Direction::{Click, Press, Release},
     Enigo, Key, Keyboard, Settings,
@@ -15,7 +16,6 @@ use std::path::PathBuf;
 use std::process::Command;
 
 pub fn handle_llm_response(llm_output: &str) -> String {
-    println!("getting handled by rust by llm");
     let cleaned = llm_output
         .trim()
         .trim_start_matches("```json")
@@ -26,16 +26,20 @@ pub fn handle_llm_response(llm_output: &str) -> String {
     let parsed: LlmResponse = match serde_json::from_str(cleaned) {
         Ok(p) => p,
         Err(e) => {
-            eprintln!("Failed to parse LLM response: {e}\nRaw: {cleaned}");
-            return "Sorry, I couldn't understand that.".into();
+            let msg = "Sorry, I couldn't understand that.".to_string();
+            let _ = tts::speak(&msg);
+            return msg;
         }
     };
 
-    match parsed.intent.as_str() {
+    let result = match parsed.intent.as_str() {
         "chat" | "error" => parsed.response,
         "system" if !parsed.operations.is_empty() => execute_operations(&parsed.operations),
         _ => parsed.response,
-    }
+    };
+
+    let _ = tts::speak(&result);
+    result
 }
 
 fn execute_operations(operations: &[Operation]) -> String {

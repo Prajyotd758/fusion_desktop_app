@@ -8,16 +8,19 @@ mod state;
 mod system;
 mod tts;
 mod whisper;
-mod whisper_server;
+mod whisper_engine;
 use audio::AudioState;
 use settings::SettingsState;
 use state::{
     get_current_language, get_llm_choice, set_current_language, set_llm_choice,
     set_selected_languages, toggle_language,
 };
+use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+use whisper_engine::{WhisperEngine, WhisperState};
+mod whisper_server;
 mod resources;
 use crate::system::helper_functions::get_focused_explorer_path;
 
@@ -25,15 +28,19 @@ use crate::system::helper_functions::get_focused_explorer_path;
 pub fn run() {
     resources::init().expect("Failed to load system prompt");
     whisper_server::start_llama_server();
-    whisper_server::start_whisper_server();
+    // whisper_server::start_whisper_server() removed — whisper now runs in-process.
 
     tauri::Builder::default()
         .manage(AudioState::new())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
-            // Load persisted settings (llm_choice, api_keys, etc.) once at startup.
             let loaded_settings = settings::load(app.handle());
             app.manage(SettingsState(Mutex::new(loaded_settings)));
+
+            let engine =
+                WhisperEngine::new("../../models/ggml-base.bin").expect("Failed to load whisper model");
+            // app.manage(WhisperState(Mutex::new(engine)));
+            app.manage(WhisperState(Arc::new(Mutex::new(engine))));
 
             let handle = app.handle().clone();
             audio::start_serial_listener(handle.clone());
@@ -67,8 +74,8 @@ pub fn run() {
                                 return;
                             }
 
-                            // Pull the current llm_choice + api_keys from persisted settings
-                            // right before running the transcription pipeline.
+                            let samples = audio::take_samples(&state);
+
                             let (llm_choice, keys, language) = {
                                 let settings_state = handle.state::<SettingsState>();
                                 let settings = settings_state.0.lock().unwrap();
@@ -78,8 +85,11 @@ pub fn run() {
                                     settings.current_language().to_string(),
                                 )
                             };
-                            
-                            match commands::run_transcribe_only(llm_choice, &keys, &language).await
+
+                            match commands::run_transcribe_only(
+                                &handle, llm_choice, &keys, &language, samples,
+                            )
+                            .await
                             {
                                 Ok(result) => {
                                     eprintln!("[shortcut] result: {result}");

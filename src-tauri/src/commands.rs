@@ -39,11 +39,13 @@ pub fn is_valid_transcript(text: &str) -> bool {
 }
 
 pub async fn run_transcribe_only(
+    app: &tauri::AppHandle,
     llm_choice: LlmChoice,
     keys: &ApiKeys,
     language: &str,
+    samples: Vec<f32>,
 ) -> Result<String, String> {
-    let text = whisper::transcribe(language)
+    let text = whisper::transcribe(app, samples, language)
         .await
         .map_err(|e| e.to_string())?;
     println!("Transcript: {}", text);
