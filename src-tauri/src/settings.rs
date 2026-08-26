@@ -34,11 +34,11 @@ pub fn load(app: &tauri::AppHandle) -> AppSettings {
     match fs::read_to_string(&path) {
         Ok(raw) => match serde_json::from_str(&raw) {
             Ok(settings) => settings,
-            Err(e) => {
+            Err(_e) => {
                 AppSettings::default()
             }
         },
-        Err(e) => {
+        Err(_e) => {
             AppSettings::default()
         }
     }

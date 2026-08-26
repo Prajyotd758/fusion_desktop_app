@@ -1,9 +1,5 @@
-use crate::system::helper_functions::{default_workspace, workspace_candidates};
-use crate::system::types::OpParams;
-use std::collections::HashMap;
-use std::fs;
-use std::path::{Path, PathBuf};
-use strsim::normalized_levenshtein;
+use crate::system::helper_functions::desktop_dir;
+use std::path::PathBuf;
 
 pub fn sanitize_name(raw: &str) -> String {
     let cleaned: String = raw
@@ -18,91 +14,83 @@ pub fn sanitize_name(raw: &str) -> String {
         .to_string()
 }
 
-pub fn normalize(s: &str) -> String {
-    s.chars()
-        .filter(|c| c.is_alphanumeric())
-        .collect::<String>()
-        .to_lowercase()
+fn is_absolute_path(s: &str) -> bool {
+    s.len() >= 2 && s.as_bytes()[1] == b':'
 }
 
-pub fn find_best_match(target: &str, dir: &Path) -> Option<PathBuf> {
-    let target_norm = normalize(target);
-    if target_norm.is_empty() {
-        return None;
+/// Strips a leading "desktop" segment (any case), since desktop_dir()
+/// already represents that root — keeps the remaining subpath as-is.
+fn strip_desktop_prefix(location: &str) -> String {
+    let segments: Vec<&str> = location
+        .split(|c| c == '\\' || c == '/')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect();
+
+    if segments.is_empty() {
+        return String::new();
     }
 
-    let entries = fs::read_dir(dir).ok()?;
-    let mut best: Option<(PathBuf, f64)> = None;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        let stem = path
-            .file_stem()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-        let full_name = path
-            .file_name()
-            .map(|s| s.to_string_lossy().to_string())
-            .unwrap_or_default();
-
-        let stem_norm = normalize(&stem);
-        let full_norm = normalize(&full_name);
-
-        if stem_norm == target_norm || full_norm == target_norm {
-            return Some(path);
-        }
-
-        let score = normalized_levenshtein(&target_norm, &stem_norm)
-            .max(normalized_levenshtein(&target_norm, &full_norm));
-
-        if best.as_ref().map_or(true, |(_, s)| score > *s) {
-            best = Some((path, score));
-        }
-    }
-
-    best.filter(|(_, score)| *score >= 0.7)
-        .map(|(path, _)| path)
-}
-
-pub fn resolve_base(p: &OpParams, known: &HashMap<String, PathBuf>) -> PathBuf {
-    let candidate = if !p.parent.is_empty() && p.parent.to_lowercase() != "desktop" {
-        Some(p.parent.as_str())
-    } else if !p.location.is_empty() && p.location.to_lowercase() != "desktop" {
-        Some(p.location.as_str())
+    let rest = if segments[0].eq_ignore_ascii_case("desktop") {
+        &segments[1..]
     } else {
-        None
+        &segments[..]
     };
 
-    match candidate {
-        Some(c) => resolve_named(c, known),
-        None => default_workspace(),
-    }
+    rest.join("\\")
 }
 
-pub fn resolve_target(p: &OpParams, known: &HashMap<String, PathBuf>) -> PathBuf {
-    if !p.path.is_empty() {
-        return PathBuf::from(&p.path);
+/// Resolves any raw location/source/destination string from the LLM
+/// into an absolute path. Absolute paths (C:\...) pass through untouched;
+/// everything else is treated as relative to Desktop.
+pub fn resolve_full_path(raw: &str) -> PathBuf {
+    let trimmed = raw.trim();
+
+    if trimmed.is_empty() {
+        return desktop_dir();
     }
-    let name = if !p.location.is_empty() && p.location.to_lowercase() != "desktop" {
-        p.location.clone()
+
+    if is_absolute_path(trimmed) {
+        return PathBuf::from(trimmed);
+    }
+
+    let stripped = strip_desktop_prefix(trimmed);
+    if stripped.is_empty() {
+        desktop_dir()
     } else {
-        p.name.clone()
-    };
-    resolve_named(&name, known)
+        desktop_dir().join(stripped)
+    }
 }
 
-pub fn resolve_named(name: &str, known: &HashMap<String, PathBuf>) -> PathBuf {
-    let sanitized = sanitize_name(name);
+/// Base folder for create_folder/create_file (location only, no name joined).
+pub fn resolve_base(location: &str) -> PathBuf {
+    resolve_full_path(location)
+}
 
-    if let Some(path) = known.get(&sanitized.to_lowercase()) {
-        return path.clone();
+/// Full target path for an existing item: location (folder) + name (item).
+// pub fn resolve_target(location: &str, name: &str) -> PathBuf {
+//     let base = resolve_full_path(location);
+//     if name.is_empty() {
+//         base
+//     } else {
+//         base.join(sanitize_name(name))
+//     }
+// }
+
+pub fn resolve_target(location: &str, name: &str, extension: &str) -> PathBuf {
+    let base = resolve_full_path(location);
+    if name.is_empty() {
+        return base;
     }
-
-    for dir in workspace_candidates() {
-        if let Some(matched) = find_best_match(&sanitized, &dir) {
-            return matched;
+    let mut full_name = sanitize_name(name);
+    if !extension.is_empty() {
+        let ext = extension.trim_start_matches('.');
+        if !full_name
+            .to_lowercase()
+            .ends_with(&format!(".{}", ext.to_lowercase()))
+        {
+            full_name = format!("{full_name}.{ext}");
         }
     }
-
-    default_workspace().join(&sanitized)
+    base.join(full_name)
 }

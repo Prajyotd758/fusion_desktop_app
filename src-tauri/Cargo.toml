@@ -22,16 +22,27 @@ tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-reqwest = { version = "0.12", features = ["multipart", "json"] }
+reqwest = { version = "0.13", features = ["multipart", "json"] }
 tokio = { version = "1", features = ["full"] }
-cpal = "0.15"
+cpal = "0.18"
 hound = "3.5"
 anyhow = "1"
-enigo = "0.2"
+enigo = "0.6"
 tauri-plugin-global-shortcut = "2"
-dirs = "5"
+dirs = "6"
 strsim = "0.11"
-rodio = "0.20"
-serialport = "4.3"
-whisper-rs = { version = "0.15", features = ["vulkan"] }
-windows = { version = "0.58", features = ["Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Foundation"] }
+rodio = { version = "0.22", default-features = false, features = ["playback"] }
+serialport = "4.9"
+whisper-rs = { version = "0.16", features = ["vulkan"] }
+windows = { version = "0.62", features = ["Win32_UI_WindowsAndMessaging", "Win32_System_Threading", "Win32_System_ProcessStatus", "Win32_Foundation"] }
+once_cell = "1.21.4"
+screenshots = "0.8.10"
+image = "0.25.10"
+chrono = "0.4.45"
+urlencoding = "2"
+futures = "0.3.34"
+chromiumoxide = "0.9.1"
+base64 = "0.22"
+dotenvy = "0.15"
+unicode-normalization = "0.1"
+dunce = "1"

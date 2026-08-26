@@ -1,3 +1,4 @@
+use crate::state::{self, TaskStatus};
 use anyhow::{anyhow, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::SampleFormat;
@@ -104,6 +105,7 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                             line_buf.clear();
 
                             if line == "START" {
+                                state::set_status(TaskStatus::Recording);
                                 let state_handle = app.state::<AudioState>();
                                 if state_handle.recording.swap(true, Ordering::SeqCst) {
                                     eprintln!("[serial] START ignored, already recording");
@@ -112,6 +114,7 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                                 state_handle.samples.lock().unwrap().clear();
                                 total_samples = 0;
                             } else if line == "STOP" {
+                                state::set_status(TaskStatus::Transcribing);
                                 let state_handle = app.state::<AudioState>();
                                 state_handle.recording.store(false, Ordering::SeqCst);
 
@@ -146,7 +149,7 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                                     .await
                                     {
                                         Ok(result) => {
-                                            let _ = app_clone.emit("command-result", result);
+                                            let _ = app_clone.emit("user-command", result);
                                         }
                                         Err(e) => eprintln!("[serial] transcribe failed: {e}"),
                                     }
@@ -220,14 +223,6 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
                 .ok_or_else(|| anyhow!("No input device found"))?;
             let config = device.default_input_config()?;
             let channels = config.channels() as usize;
-            let src_rate = config.sample_rate().0;
-
-            if src_rate != SAMPLE_RATE {
-                eprintln!(
-                    "[cpal] WARNING: mic rate {}Hz != {}Hz, whisper needs resampling (TODO: rubato)",
-                    src_rate, SAMPLE_RATE
-                );
-            }
 
             let err_fn = |err| eprintln!("Stream error: {}", err);
 
@@ -239,7 +234,7 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
                 SampleFormat::F32 => {
                     let buf = samples_buf.clone();
                     device.build_input_stream(
-                        &config.clone().into(),
+                        config.clone().into(),
                         move |data: &[f32], _| {
                             let mono: Vec<f32> = data
                                 .chunks_exact(channels)
@@ -254,7 +249,7 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
                 SampleFormat::I16 => {
                     let buf = samples_buf.clone();
                     device.build_input_stream(
-                        &config.clone().into(),
+                        config.clone().into(),
                         move |data: &[i16], _| {
                             let mono: Vec<f32> = data
                                 .chunks_exact(channels)
@@ -273,7 +268,7 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
                 SampleFormat::U16 => {
                     let buf = samples_buf.clone();
                     device.build_input_stream(
-                        &config.clone().into(),
+                        config.clone().into(),
                         move |data: &[u16], _| {
                             let mono: Vec<f32> = data
                                 .chunks_exact(channels)

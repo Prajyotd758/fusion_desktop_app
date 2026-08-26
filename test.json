@@ -1,0 +1,56 @@
+{
+  "intent": "system",
+  "operations": [
+    {
+      "action": "create_folder",
+      "name": "abc",
+      "location": "",
+      "extension": "",
+      "destination": "",
+      "source": "",
+      "new_name": "",
+      "text": ""
+    },
+    {
+      "action": "create_folder",
+      "name": "xyz",
+      "location": "abc",
+      "extension": "",
+      "destination": "",
+      "source": "",
+      "new_name": "",
+      "text": ""
+    },
+    {
+      "action": "create_file",
+      "name": "testingfile123",
+      "location": "abc\\xyz",
+      "extension": "txt",
+      "destination": "",
+      "source": "",
+      "new_name": "",
+      "text": "hello"
+    },
+    {
+      "action": "open_app",
+      "name": "vscode",
+      "location": "abc\\xyz",
+      "extension": "",
+      "destination": "",
+      "source": "",
+      "new_name": "",
+      "text": ""
+    },
+    {
+      "action": "open_app",
+      "name": "cmd",
+      "location": "abc\\xyz",
+      "extension": "",
+      "destination": "",
+      "source": "",
+      "new_name": "",
+      "text": ""
+    }
+  ],
+  "response": "Done."
+}

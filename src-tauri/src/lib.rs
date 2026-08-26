@@ -1,48 +1,73 @@
 mod audio;
 mod commands;
+mod custom_command;
 mod find_serial;
-mod llm;
 mod llm_provider;
 mod settings;
 mod state;
 mod system;
 mod tts;
+mod ui_callbacks;
 mod whisper;
 mod whisper_engine;
+use crate::ui_callbacks::check_internet;
 use audio::AudioState;
+use custom_command::{save_custom_command, CustomCommandsState};
 use settings::SettingsState;
 use state::{
-    get_current_language, get_llm_choice, set_current_language, set_llm_choice,
-    set_selected_languages, toggle_language,
+    get_current_language, set_current_language, set_selected_languages, toggle_language, TaskStatus,
 };
 use std::sync::Arc;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use whisper_engine::{WhisperEngine, WhisperState};
-mod whisper_server;
 mod resources;
-use crate::system::helper_functions::get_focused_explorer_path;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    resources::init().expect("Failed to load system prompt");
-    whisper_server::start_llama_server();
-    // whisper_server::start_whisper_server() removed — whisper now runs in-process.
+    // resources::init() moved into .setup() — it needs an AppHandle to resolve paths correctly
 
     tauri::Builder::default()
         .manage(AudioState::new())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            if let Ok(env_path) = app
+                .path()
+                .resolve(".env", tauri::path::BaseDirectory::Resource)
+            {
+                match dotenvy::from_path(&env_path) {
+                    Ok(()) => println!("[env] loaded .env from {:?}", env_path),
+                    Err(e) => eprintln!("[env] failed to load .env from {:?}: {e}", env_path),
+                }
+            } else {
+                eprintln!("[env] could not resolve .env resource path");
+            }
+
+            resources::init(app.handle()).expect("Failed to load system prompt");
+
             let loaded_settings = settings::load(app.handle());
             app.manage(SettingsState(Mutex::new(loaded_settings)));
 
-            let engine =
-                WhisperEngine::new("../../models/ggml-base.bin").expect("Failed to load whisper model");
-            // app.manage(WhisperState(Mutex::new(engine)));
+            app.manage(CustomCommandsState(Mutex::new(custom_command::load(
+                app.handle(),
+            ))));
+
+            let model_path = app
+                .path()
+                .resolve(
+                    "resources/models/ggml-base.bin",
+                    tauri::path::BaseDirectory::Resource,
+                )
+                .expect("Failed to resolve whisper model path");
+
+            let engine = WhisperEngine::new(model_path.to_str().expect("invalid model path"))
+                .expect("Failed to load whisper model");
+
             app.manage(WhisperState(Arc::new(Mutex::new(engine))));
 
             let handle = app.handle().clone();
+            state::init(handle.clone());
             audio::start_serial_listener(handle.clone());
 
             let toggle_shortcut = Shortcut::new(
@@ -108,9 +133,8 @@ pub fn run() {
             toggle_language,
             set_selected_languages,
             set_current_language,
-            get_focused_explorer_path,
-            set_llm_choice,
-            get_llm_choice,
+            check_internet,
+            save_custom_command,
         ])
         .run(tauri::generate_context!())
         .expect("error running app");

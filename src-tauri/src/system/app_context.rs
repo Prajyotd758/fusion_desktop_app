@@ -14,7 +14,7 @@ pub fn open_app_in_folder(app_name: &str, folder: &Path) -> Result<String, Strin
 
     let status = match normalized.as_str() {
         "vscode" | "vs code" | "visual studio code" | "code" => Command::new("cmd")
-            .args(["/C", "code", "."])
+            .args(["/C", "start", "", "code", "."])
             .current_dir(folder)
             .status(),
 
@@ -51,5 +51,4 @@ pub fn open_app_in_folder(app_name: &str, folder: &Path) -> Result<String, Strin
     }
 }
 
-
-// and one more thing keep in mind or remind me later if i forget, we need to tell the llm that which application is open as well, for eg lets say, user says open random app and open new tab/close tab/close window, the llm should know what the user is talking about   
+// and one more thing keep in mind or remind me later if i forget, we need to tell the llm that which application is open as well, for eg lets say, user says open random app and open new tab/close tab/close window, the llm should know what the user is talking about
