@@ -15,23 +15,49 @@ use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
-pub fn speak(app: &AppHandle, text: &str) -> Result<()> {
+fn voice_model_for(lang: &str) -> &'static str {
+    match lang {
+        "hi" => "models/hi_IN-pratham-medium.onnx",
+        _ => "models/en_US-lessac-medium.onnx",
+    }
+}
+
+pub fn speak(app: &AppHandle, text: &str, lang: &str) -> Result<()> {
     let piper_raw = app
         .path()
         .resolve("piper/piper.exe", tauri::path::BaseDirectory::Resource)?;
-    let model_raw = app.path().resolve(
-        "models/en_US-lessac-medium.onnx",
-        tauri::path::BaseDirectory::Resource,
-    )?;
+    let model_raw = app
+        .path()
+        .resolve(voice_model_for(lang), tauri::path::BaseDirectory::Resource)?;
+    let espeak_data_raw = app
+        .path()
+        .resolve("piper/espeak-ng-data", tauri::path::BaseDirectory::Resource)?;
 
     let piper = dunce::canonicalize(&piper_raw).unwrap_or(piper_raw);
     let model = dunce::canonicalize(&model_raw).unwrap_or(model_raw);
+    let espeak_data = dunce::canonicalize(&espeak_data_raw).unwrap_or(espeak_data_raw);
 
     let output = std::env::temp_dir().join("fusion_response.wav");
 
+    // Sanity check: config file must exist next to the model, or Piper will
+    // silently fail phoneme conversion (0 phonemes) and crash with an
+    // unhelpful STATUS_STACK_BUFFER_OVERRUN.
+    let config_path = model.with_extension("onnx.json");
+    if !config_path.exists() {
+        bail!(
+            "Missing Piper voice config: {:?} — model and .onnx.json must both be present and in sync",
+            config_path
+        );
+    }
+
     let mut cmd = Command::new(&piper);
-    cmd.arg("--model")
+    cmd.current_dir(piper.parent().unwrap())
+        .arg("--model")
         .arg(&model)
+        .arg("--length_scale")
+        .arg("0.8")
+        .arg("--espeak_data")
+        .arg(&espeak_data)
         .arg("--output_file")
         .arg(&output)
         .stdin(Stdio::piped())

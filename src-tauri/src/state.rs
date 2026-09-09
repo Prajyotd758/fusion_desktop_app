@@ -1,9 +1,9 @@
 use crate::settings::{self, SettingsState};
+use crate::system::types::Operation;
 use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use tauri::{AppHandle, Emitter};
-use crate::system::types::Operation;
 
 /// User's selected backend. `None` = LLM disabled entirely (deterministic matcher only).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -114,7 +114,10 @@ pub fn set_status(status: TaskStatus) {
 static LAST_OPERATIONS: Mutex<Vec<Operation>> = Mutex::new(Vec::new());
 
 pub fn set_last_operations(ops: Vec<Operation>) {
-    println!("[state::set_last_operations] storing {} operation(s)", ops.len());
+    println!(
+        "[state::set_last_operations] storing {} operation(s)",
+        ops.len()
+    );
     if let Ok(mut guard) = LAST_OPERATIONS.lock() {
         *guard = ops;
     } else {
@@ -125,7 +128,10 @@ pub fn set_last_operations(ops: Vec<Operation>) {
 pub fn take_last_operations() -> Vec<Operation> {
     match LAST_OPERATIONS.lock() {
         Ok(g) => {
-            println!("[state::take_last_operations] returning {} operation(s)", g.len());
+            println!(
+                "[state::take_last_operations] returning {} operation(s)",
+                g.len()
+            );
             g.clone()
         }
         Err(e) => {

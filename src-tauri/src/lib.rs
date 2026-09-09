@@ -32,6 +32,14 @@ pub fn run() {
         .manage(AudioState::new())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
+            let app_data_dir = app.path().app_data_dir().expect("no app data dir");
+            std::fs::create_dir_all(&app_data_dir).ok();
+
+            let memory_state = system::memory::load_memory_state(&app_data_dir);
+            app.manage(system::types::MemoryStateHandle(std::sync::Mutex::new(
+                memory_state,
+            )));
+
             if let Ok(env_path) = app
                 .path()
                 .resolve(".env", tauri::path::BaseDirectory::Resource)

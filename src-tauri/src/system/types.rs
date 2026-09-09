@@ -1,6 +1,28 @@
 use crate::state::LlmChoice;
 use serde::Deserialize;
 use serde::Serialize;
+use std::collections::VecDeque;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ChatTurn {
+    pub role: String, // "user" | "assistant"
+    pub content: String,
+    pub timestamp: i64, // unix seconds
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct RememberItem {
+    pub target: String, // "user_data" | "memory"
+    pub content: String,
+}
+
+pub struct MemoryState {
+    pub user_data: Vec<String>,           // loaded from user_data.md
+    pub memory: Vec<String>,              // loaded from memory.md
+    pub chat_history: VecDeque<ChatTurn>, // capped, in-memory only
+}
+
+pub struct MemoryStateHandle(pub std::sync::Mutex<MemoryState>);
 
 #[derive(Deserialize)]
 pub struct LlmResponse {
@@ -8,6 +30,13 @@ pub struct LlmResponse {
     pub response: String,
     #[serde(default)]
     pub operations: Vec<Operation>,
+    pub response_language: String,
+    #[serde(default)]
+    pub remember: Vec<RememberItem>,
+}
+
+fn default_response_language() -> String {
+    "en".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -9,11 +9,13 @@ use crate::system::helper_functions::{
 use crate::system::path_resolver::{
     resolve_base, resolve_full_path, resolve_target, sanitize_name,
 };
+use crate::system::types::MemoryStateHandle;
 use crate::system::types::{LlmResponse, Operation};
 use crate::tts;
 use std::fs;
 use std::process::Command;
 use tauri::AppHandle;
+use tauri::Manager;
 
 use super::helper_functions;
 
@@ -32,12 +34,11 @@ pub fn handle_llm_response(app: &AppHandle, llm_output: &str) -> String {
         Err(e) => {
             eprintln!("{e}");
             let msg = "Sorry, I couldn't understand that.".to_string();
-            let _ = tts::speak(app, &msg);
+            let _ = tts::speak(app, &msg, "en");
             return msg;
         }
     };
 
-    // Normalize: pull any stray nested "parameters" values into flat fields
     // Normalize: pull any stray nested "parameters" values into flat fields
     parsed.operations = parsed
         .operations
@@ -45,6 +46,19 @@ pub fn handle_llm_response(app: &AppHandle, llm_output: &str) -> String {
         .map(Operation::normalize)
         .map(resolve_operation_app_name)
         .collect();
+
+    let lang = parsed.response_language.clone();
+
+    // --- memory: apply remember items (before execution, so it survives regardless of op outcome) ---
+    if !parsed.remember.is_empty() {
+        let app_data_dir = app.path().app_data_dir().expect("no app data dir");
+        let memory_state = app.state::<MemoryStateHandle>();
+        crate::system::memory::apply_remember(
+            &app_data_dir,
+            &memory_state.0,
+            parsed.remember.clone(),
+        );
+    }
 
     let result = match parsed.intent.as_str() {
         "chat" | "error" => parsed.response,
@@ -54,25 +68,29 @@ pub fn handle_llm_response(app: &AppHandle, llm_output: &str) -> String {
                 parsed.operations.len()
             );
             state::set_status(TaskStatus::Executing);
-            let result = execute_operations(app, &parsed.operations);
+            let result = execute_operations(app, &parsed.operations, &lang);
             state::set_last_operations(parsed.operations.clone());
-            println!("[handle_llm_response] execution result: {result}");
             result
         }
         _ => parsed.response,
     };
 
-    state::set_status(TaskStatus::Speaking);
-    if let Err(e) = tts::speak(app, &result) {
-        eprintln!("TTS speak failed: {e}");
+    // --- memory: push this turn into rolling chat history ---
+    {
+        let memory_state = app.state::<MemoryStateHandle>();
+        crate::system::memory::push_chat_turn(&memory_state.0, "assistant", &result);
     }
 
+    state::set_status(TaskStatus::Speaking);
+    if let Err(e) = tts::speak(app, &result, &lang) {
+        eprintln!("TTS speak failed: {e}");
+    }
     result
 }
 
-pub fn execute_operations(app: &AppHandle, operations: &[Operation]) -> String {
+pub fn execute_operations(app: &AppHandle, operations: &[Operation], lang: &str) -> String {
     for op in operations {
-        match execute_operation(app, op) {
+        match execute_operation(app, op, lang) {
             Ok(_) => continue,
             Err(e) => return format!("Command failed: {e}"),
         }
@@ -80,7 +98,7 @@ pub fn execute_operations(app: &AppHandle, operations: &[Operation]) -> String {
     "Done".into()
 }
 
-fn execute_operation(app: &AppHandle, p: &Operation) -> Result<(), String> {
+fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), String> {
     match p.action.as_str() {
         "create_folder" => {
             let name = sanitize_name(&p.name);
@@ -257,12 +275,17 @@ fn execute_operation(app: &AppHandle, p: &Operation) -> Result<(), String> {
 
             let answer = tokio::task::block_in_place(|| {
                 tokio::runtime::Handle::current().block_on(async move {
-                    llm_provider::query_vision_llm(&reqwest::Client::new(), &img_b64, &question)
-                        .await
+                    llm_provider::query_vision_llm(
+                        &reqwest::Client::new(),
+                        &img_b64,
+                        &question,
+                        lang,
+                    )
+                    .await
                 })
             })
             .map_err(|e| e.to_string())?;
-            let _ = tts::speak(app, &answer);
+            let _ = tts::speak(app, &answer, lang);
 
             Ok(())
         }

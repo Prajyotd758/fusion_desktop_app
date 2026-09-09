@@ -24,6 +24,8 @@ For system intent:
 - browser_open_first_result: user wants search results AND to be taken into the top result (e.g. "search mongodb and open the first link", "search X and open the top result"). name = browser (default chrome), text = query.
 - contextual_search: user says "search for X" with no app specified. Decide location field from the focused-app context provided: if a browser (edge/chrome/brave) is focused, location="browser"; otherwise location="desktop". text = query only. This types directly into the currently focused window — no new window/tab opens.
 - If the user asks about screen contents, visible data, what's on display, or to read/analyze the screen, return action: 'vision_query' with text set to their question.
+- Response language: set "response_language" to "en" by default. currently available languages are only hindi and english, if requested languagae is other than this 2, reply in english.
+CRITICAL: "response_language" MUST match the actual language you write "response" in. If you write the response text in Hindi, "response_language" MUST be "hi" — never leave it as "en" while writing Hindi content. These two fields are never allowed to disagree.
 
 For chat intent: operations empty, respond 20–50 words unless asked for more.
 For error intent: operations empty, briefly explain the issue.

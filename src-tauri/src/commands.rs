@@ -82,6 +82,7 @@ pub async fn run_transcribe_only(
             let _ = tts::speak(
                 app,
                 "No internet connection. Please check your network and try again.",
+                "en",
             );
             state::set_status(TaskStatus::Idle);
             return Err("offline: non-English requires internet".to_string());
@@ -97,7 +98,7 @@ pub async fn run_transcribe_only(
 
     if !is_valid_transcript(&text) {
         println!("Ignored non-speech/noise transcript: {:?}", text);
-        let _ = tts::speak(app, "Sorry, no speech detected. Try again!");
+        let _ = tts::speak(app, "Sorry, no speech detected. Try again!", "en");
         state::set_status(TaskStatus::Idle);
         return Ok(String::new());
     }
@@ -128,10 +129,10 @@ pub async fn run_transcribe_only(
 
     if let Some(operations) = matched_ops {
         state::set_status(TaskStatus::Executing);
-        let result = crate::system::llm_ops::execute_operations(app, &operations);
-        println!("[custom_match] result: {result}");
+        // custom/saved commands are not LLM-routed, so no response_language available -> default "en"
+        let result = crate::system::llm_ops::execute_operations(app, &operations, "en");
         state::set_status(TaskStatus::Speaking);
-        let _ = tts::speak(app, &result);
+        let _ = tts::speak(app, &result, "en");
         state::set_status(TaskStatus::Idle);
         return Ok(result);
     }
@@ -141,13 +142,13 @@ pub async fn run_transcribe_only(
         match fast_match::execute_action(action, arg.as_deref()) {
             Ok(()) => {
                 state::set_status(TaskStatus::Speaking);
-                let _ = tts::speak(app, "Done");
+                let _ = tts::speak(app, "Done", "en");
                 state::set_status(TaskStatus::Idle);
                 return Ok("ok".to_string());
             }
             Err(e) => {
                 state::set_status(TaskStatus::Speaking);
-                let _ = tts::speak(app, "Sorry, that didn't work");
+                let _ = tts::speak(app, "Sorry, that didn't work", "en");
                 state::set_status(TaskStatus::Idle);
                 return Err(e.to_string());
             }
@@ -165,7 +166,7 @@ pub async fn run_transcribe_only(
     let llm_result = match llm_choice {
         LlmChoice::None => {
             println!("LLM disabled; no deterministic match for: {:?}", text);
-            let _ = tts::speak(app, "Sorry, I didn't understand that command.");
+            let _ = tts::speak(app, "Sorry, I didn't understand that command.", "en");
             state::set_status(TaskStatus::Idle);
             return Ok("Sorry, I didn't understand that command.".to_string());
         }
@@ -173,19 +174,25 @@ pub async fn run_transcribe_only(
             if !online {
                 println!("[run_transcribe_only] offline, no fast/custom match, cannot reach LLM");
                 let msg = "Sorry, I couldn't find a matching command, and I'm offline right now.";
-                let _ = tts::speak(app, msg);
+                let _ = tts::speak(app, msg, "en");
                 state::set_status(TaskStatus::Idle);
                 return Ok(msg.to_string());
             }
 
             let resources = crate::resources::get();
             let system_prompt = &resources.system_prompt;
+
+            let memory_state = app.state::<crate::system::types::MemoryStateHandle>();
+            let memory_context = crate::system::memory::build_memory_context(&memory_state.0);
+            crate::system::memory::push_chat_turn(&memory_state.0, "user", &text);
+
             match llm_provider::generate_response(
                 &reqwest::Client::new(),
                 Provider::Groq,
                 keys,
                 &system_prompt,
                 &text,
+                &memory_context,
             )
             .await
             {
@@ -195,6 +202,7 @@ pub async fn run_transcribe_only(
         }
     };
 
+    // response_language handling (including speak()) happens inside handle_llm_response
     let result = system::handle_llm_response(app, &llm_result);
     println!("execution result:\n{}", result);
     state::set_status(TaskStatus::Idle);

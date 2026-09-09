@@ -517,7 +517,7 @@ pub async fn handle_transcribe_failure(
         "Sorry, I couldn't process that. Please try again."
     };
 
-    let _ = tts::speak(app, spoken);
+    let _ = tts::speak(app, spoken , "en");
     state::set_status(TaskStatus::Idle);
 
     err_msg
