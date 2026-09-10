@@ -17,9 +17,11 @@ pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     )?;
     let system_prompt = std::fs::read_to_string(&prompt_path)?;
 
-    let response_schema: Value = serde_json::from_str(&fs::read_to_string(
+    let schema_path = app.path().resolve(
         "resources/schemas/response_schema.json",
-    )?)?;
+        tauri::path::BaseDirectory::Resource,
+    )?;
+    let response_schema: Value = serde_json::from_str(&std::fs::read_to_string(&schema_path)?)?;
 
     RESOURCES
         .set(AppResources {
@@ -30,7 +32,6 @@ pub fn init(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
 pub fn get() -> &'static AppResources {
     RESOURCES.get().expect("Resources not initialized")
 }
