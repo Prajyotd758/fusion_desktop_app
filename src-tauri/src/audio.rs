@@ -132,19 +132,15 @@ fn run_listener(app: &AppHandle, port: Box<dyn serialport::SerialPort>) -> Resul
                                 let samples = take_samples(&state_handle);
                                 let app_clone = app.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    let (llm_choice, keys, language) = {
+                                    let llm_choice = {
                                         let settings_state =
                                             app_clone.state::<crate::settings::SettingsState>();
                                         let settings = settings_state.0.lock().unwrap();
-                                        (
-                                            settings.llm_choice,
-                                            settings.api_keys.clone(),
-                                            settings.current_language().to_string(),
-                                        )
+                                        settings.llm_choice
                                     };
 
                                     match crate::commands::run_transcribe_only(
-                                        &app_clone, llm_choice, &keys, &language, samples,
+                                        &app_clone, llm_choice, samples,
                                     )
                                     .await
                                     {

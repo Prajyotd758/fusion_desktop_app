@@ -6,5 +6,6 @@ pub mod path_resolver;
 pub mod types;
 pub mod browser_automation;
 pub mod memory;
+pub mod app_discovery;
 
 pub use llm_ops::handle_llm_response;

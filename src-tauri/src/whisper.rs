@@ -3,18 +3,13 @@ use crate::whisper_engine::WhisperState;
 use anyhow::Result;
 use tauri::Manager;
 
-pub async fn transcribe(
-    app: &tauri::AppHandle,
-    samples: Vec<f32>,
-    language: &str,
-) -> Result<String> {
-    let language = language.to_string();
+pub async fn transcribe(app: &tauri::AppHandle, samples: Vec<f32>) -> Result<String> {
     let state = app.state::<WhisperState>();
     let engine_arc = state.0.clone();
 
     let text = tauri::async_runtime::spawn_blocking(move || {
         let engine = engine_arc.lock().unwrap();
-        engine.transcribe(&samples, &language)
+        engine.transcribe(&samples)
     })
     .await??;
 
@@ -22,10 +17,8 @@ pub async fn transcribe(
     Ok(text)
 }
 
-pub async fn transcribe_groq(samples: Vec<f32>, language: &str) -> Result<String> {
+pub async fn transcribe_groq(samples: Vec<f32>) -> Result<String> {
     use std::io::Cursor;
-
-    println!("language : {}", language.to_string());
 
     let mut wav = Cursor::new(Vec::new());
 
@@ -56,7 +49,6 @@ pub async fn transcribe_groq(samples: Vec<f32>, language: &str) -> Result<String
     let form = reqwest::multipart::Form::new()
         .part("file", part)
         .text("model", "whisper-large-v3-turbo")
-        .text("language", language.to_string())
         .text("response_format", "json");
 
     let resp = client

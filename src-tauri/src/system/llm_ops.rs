@@ -4,7 +4,8 @@ use crate::system::app_context;
 use crate::system::browser_automation;
 use crate::system::fast_match;
 use crate::system::helper_functions::{
-    default_workspace, is_dangerous, open_with_shell, resolve_operation_app_name,
+    default_workspace, is_dangerous, open_resolved, open_with_shell, resolve_app,
+    resolve_operation_app_name,
 };
 use crate::system::path_resolver::{
     resolve_base, resolve_full_path, resolve_target, sanitize_name,
@@ -210,21 +211,14 @@ fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), S
             }
 
             if !p.location.is_empty() {
-                // location given -> behave like open_app_in_folder
                 let folder = resolve_base(&p.location);
                 app_context::open_app_in_folder(&name, &folder)?;
                 Ok(())
             } else {
-                // no location -> simple open
-                let status = Command::new("cmd")
-                    .args(["/C", "start", "", &name])
-                    .status()
-                    .map_err(|e| e.to_string())?;
-                if status.success() {
-                    Ok(())
-                } else {
-                    Err(format!("could not open {name}"))
-                }
+                let (kind, target) =
+                    resolve_app(&name).ok_or_else(|| format!("could not resolve app: {name}"))?;
+                open_resolved(&kind, &target).map_err(|e| e.to_string())?;
+                Ok(())
             }
         }
         "close_app" => {
@@ -298,7 +292,7 @@ fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), S
         "volume_down" => fast_match::volume_down(),
         "mute" => fast_match::mute(),
         "lock_screen" => fast_match::lock_screen(),
-        "sleep" => fast_match::sleep(),
+        "sleep" => fast_match::sleep_system(),
         "shutdown" => fast_match::shutdown(),
         "restart" => fast_match::restart(),
         "screenshot" => fast_match::screenshot(),

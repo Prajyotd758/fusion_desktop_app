@@ -5,7 +5,7 @@ use crate::state::{self, TaskStatus};
 use crate::system;
 use crate::system::fast_match;
 use crate::system::helper_functions;
-use crate::system::r#types::{ApiKeys, Provider};
+use crate::system::r#types::Provider;
 use crate::tts;
 use crate::whisper;
 use strsim::jaro_winkler;
@@ -49,46 +49,24 @@ pub fn is_valid_transcript(text: &str) -> bool {
 pub async fn run_transcribe_only(
     app: &tauri::AppHandle,
     llm_choice: LlmChoice,
-    keys: &ApiKeys,
-    language: &str,
     samples: Vec<f32>,
 ) -> Result<String, String> {
     let online = crate::ui_callbacks::check_internet().await;
 
-    let text = if language == "en" {
-        if online {
-            match whisper::transcribe_groq(samples.clone(), language).await {
-                Ok(t) => t,
-                Err(e) => {
-                    eprintln!("[run_transcribe_only] Groq failed, falling back to local: {e}");
-                    match whisper::transcribe(app, samples, language).await {
-                        Ok(t) => t,
-                        Err(e) => {
-                            return Err(helper_functions::handle_transcribe_failure(app, e).await)
-                        }
-                    }
+    let text = if online {
+        match whisper::transcribe_groq(samples.clone()).await {
+            Ok(t) => t,
+            Err(e) => {
+                eprintln!("[run_transcribe_only] Groq failed, falling back to local: {e}");
+                match whisper::transcribe(app, samples).await {
+                    Ok(t) => t,
+                    Err(e) => return Err(helper_functions::handle_transcribe_failure(app, e).await),
                 }
-            }
-        } else {
-            println!("[run_transcribe_only] offline, using local whisper");
-            match whisper::transcribe(app, samples, language).await {
-                Ok(t) => t,
-                Err(e) => return Err(helper_functions::handle_transcribe_failure(app, e).await),
             }
         }
     } else {
-        if !online {
-            eprintln!("[run_transcribe_only] non-English language '{language}' requires internet, but offline");
-            let _ = tts::speak(
-                app,
-                "No internet connection. Please check your network and try again.",
-                "en",
-            );
-            state::set_status(TaskStatus::Idle);
-            return Err("offline: non-English requires internet".to_string());
-        }
-        println!("[run_transcribe_only] non-English language '{language}', using Groq");
-        match whisper::transcribe_groq(samples, language).await {
+        println!("[run_transcribe_only] offline, using local whisper");
+        match whisper::transcribe(app, samples).await {
             Ok(t) => t,
             Err(e) => return Err(helper_functions::handle_transcribe_failure(app, e).await),
         }
@@ -155,11 +133,7 @@ pub async fn run_transcribe_only(
         }
     }
 
-    // no fast match at all -> offline mode has nothing else to do, return "unsupported"
-
-    // else continue to offline LLM dispatch as before
-
-    // no fast match at all -> offline mode has nothing else to do, return "unsupported"
+    // no fast match at all -> continue to LLM dispatch
 
     let online = crate::ui_callbacks::check_internet().await;
 
@@ -170,7 +144,7 @@ pub async fn run_transcribe_only(
             state::set_status(TaskStatus::Idle);
             return Ok("Sorry, I didn't understand that command.".to_string());
         }
-        LlmChoice::Claude | LlmChoice::OpenAi | LlmChoice::Groq => {
+        LlmChoice::Groq => {
             if !online {
                 println!("[run_transcribe_only] offline, no fast/custom match, cannot reach LLM");
                 let msg = "Sorry, I couldn't find a matching command, and I'm offline right now.";
@@ -179,9 +153,6 @@ pub async fn run_transcribe_only(
                 return Ok(msg.to_string());
             }
 
-            let resources = crate::resources::get();
-            let system_prompt = &resources.system_prompt;
-
             let memory_state = app.state::<crate::system::types::MemoryStateHandle>();
             let memory_context = crate::system::memory::build_memory_context(&memory_state.0);
             crate::system::memory::push_chat_turn(&memory_state.0, "user", &text);
@@ -189,8 +160,6 @@ pub async fn run_transcribe_only(
             match llm_provider::generate_response(
                 &reqwest::Client::new(),
                 Provider::Groq,
-                keys,
-                &system_prompt,
                 &text,
                 &memory_context,
             )

@@ -1,5 +1,5 @@
 use serde_json::Value;
-use std::{fs, sync::OnceLock};
+use std::sync::OnceLock;
 use tauri::{AppHandle, Manager};
 
 #[derive(Debug)]

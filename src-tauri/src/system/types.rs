@@ -1,7 +1,7 @@
 use crate::state::LlmChoice;
 use serde::Deserialize;
 use serde::Serialize;
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChatTurn {
@@ -35,10 +35,6 @@ pub struct LlmResponse {
     pub remember: Vec<RememberItem>,
 }
 
-fn default_response_language() -> String {
-    "en".to_string()
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Operation {
     pub action: String,
@@ -60,6 +56,30 @@ pub struct Operation {
     pub keys: String,
     #[serde(default)]
     pub parameters: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AppEntry {
+    pub exe_path: String,
+    #[serde(default)]
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Default, Serialize, Deserialize)]
+pub struct AppCache {
+    // key = display name from .lnk / registry (lowercase)
+    pub apps: HashMap<String, AppEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AliasResult {
+    pub exe_path: String,
+    pub aliases: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct AliasResponse {
+    pub apps: Vec<AliasResult>,
 }
 
 impl Operation {
@@ -105,16 +125,6 @@ pub struct AppSettings {
 
     #[serde(default)]
     pub shortcut: Option<String>,
-
-    #[serde(default = "default_languages")]
-    pub selected_languages: [String; 3],
-
-    #[serde(default)]
-    pub current_language_index: usize,
-}
-
-fn default_languages() -> [String; 3] {
-    ["en".into(), "hi".into(), "mr".into()]
 }
 
 impl Default for AppSettings {
@@ -124,15 +134,7 @@ impl Default for AppSettings {
             api_keys: ApiKeys::default(),
             custom_keywords: Vec::new(),
             shortcut: None,
-            selected_languages: default_languages(),
-            current_language_index: 0,
         }
-    }
-}
-
-impl AppSettings {
-    pub fn current_language(&self) -> &str {
-        &self.selected_languages[self.current_language_index]
     }
 }
 
@@ -140,8 +142,6 @@ impl AppSettings {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Provider {
-    Claude,
-    OpenAI,
     Groq,
 }
 
@@ -170,80 +170,36 @@ impl From<reqwest::Error> for LlmError {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ApiKeys {
-    pub claude_key: Option<String>,
-    pub openai_key: Option<String>,
     pub groq_key: Option<String>,
 }
 
-// ---- Claude ----
 #[derive(Serialize)]
-pub struct ClaudeRequest<'a> {
-    pub model: &'a str,
-    pub max_tokens: u32,
-    pub system: &'a str,
-    pub messages: Vec<ClaudeMessage<'a>>,
-}
-
-#[derive(Serialize)]
-pub struct ClaudeMessage<'a> {
+pub struct GroqMessage<'a> {
     pub role: &'a str,
     pub content: &'a str,
 }
 
-#[derive(Deserialize)]
-pub struct ClaudeResponse {
-    pub content: Vec<ClaudeContentBlock>,
-}
-
-#[derive(Deserialize)]
-pub struct ClaudeContentBlock {
-    #[serde(rename = "type")]
-    pub kind: String,
-    pub text: Option<String>,
-}
-
-// ---- OpenAI ----
-#[derive(Serialize)]
-pub struct OpenAiRequest<'a> {
-    pub model: &'a str,
-    pub max_tokens: u32,
-    pub messages: Vec<OpenAiMessage<'a>>,
-    pub response_format: serde_json::Value,
-}
-
-#[derive(Serialize)]
-pub struct OpenAiMessage<'a> {
-    pub role: &'a str,
-    pub content: &'a str,
-}
-
-#[derive(Deserialize)]
-pub struct OpenAiResponse {
-    pub choices: Vec<OpenAiChoice>,
-}
-
-#[derive(Deserialize)]
-pub struct OpenAiChoice {
-    pub message: OpenAiChoiceMessage,
-}
-
-#[derive(Deserialize)]
-pub struct OpenAiChoiceMessage {
-    pub content: String,
-}
-
-// ---- Groq (OpenAI-compatible, reuses OpenAiMessage) ----
 #[derive(Serialize)]
 pub struct GroqRequest<'a> {
     pub model: &'a str,
     pub max_tokens: u32,
     pub temperature: f32,
-    pub messages: Vec<OpenAiMessage<'a>>,
+    pub messages: Vec<GroqMessage<'a>>,
     pub response_format: serde_json::Value,
     pub reasoning_effort: &'a str,
 }
 
 #[derive(Deserialize)]
 pub struct GroqResponse {
-    pub choices: Vec<OpenAiChoice>,
+    pub choices: Vec<GroqChoice>,
+}
+
+#[derive(Deserialize)]
+pub struct GroqChoice {
+    pub message: GroqChoiceMessage,
+}
+
+#[derive(Deserialize)]
+pub struct GroqChoiceMessage {
+    pub content: String,
 }

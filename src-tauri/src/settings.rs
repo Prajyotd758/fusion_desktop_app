@@ -44,12 +44,5 @@ pub fn load(app: &tauri::AppHandle) -> AppSettings {
     }
 }
 
-/// Write current settings to disk. Call after any change.
-pub fn save(app: &tauri::AppHandle, settings: &AppSettings) -> Result<(), String> {
-    let path = settings_file_path(app)?;
-    let raw = serde_json::to_string_pretty(settings).map_err(|e| e.to_string())?;
-    fs::write(&path, raw).map_err(|e| e.to_string())
-}
-
 /// Managed Tauri state — one Mutex wrapping the whole settings struct.
 pub struct SettingsState(pub Mutex<AppSettings>);

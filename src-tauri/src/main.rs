@@ -2,6 +2,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    let is_autostart = std::env::args().any(|a| a == "--autostart");
+    std::env::args().any(|a| a == "--autostart");
     arceus_lib::run();
 }

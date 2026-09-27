@@ -9,13 +9,14 @@ use screenshots::Screen;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process::Command;
+use std::thread::sleep;
+use std::time::Duration;
 use windows::core::BOOL;
 use windows::Win32::Foundation::{HWND, LPARAM};
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetForegroundWindow, GetWindowThreadProcessId, IsWindowVisible, ShowWindow,
-    SW_MAXIMIZE, SW_MINIMIZE, SW_SHOWMINIMIZED,
+    EnumWindows, GetWindowThreadProcessId, IsWindowVisible, ShowWindow, SW_SHOWMINIMIZED,
 };
 
 #[derive(Debug)]
@@ -48,7 +49,7 @@ pub fn execute_action(action: &str, arg: Option<&str>) -> Result<(), ExecError> 
         "mute" => mute().map_err(ExecError::Enigo)?,
 
         "lock_screen" => lock_screen().map_err(ExecError::Io)?,
-        "sleep" => sleep().map_err(ExecError::Io)?,
+        "sleep" => sleep_system().map_err(ExecError::Io)?,
         "shutdown" => shutdown().map_err(ExecError::Io)?,
         "restart" => restart().map_err(ExecError::Io)?,
         "screenshot" => screenshot().map_err(ExecError::Io)?,
@@ -98,7 +99,7 @@ pub fn execute_action(action: &str, arg: Option<&str>) -> Result<(), ExecError> 
             let (kind, target) =
                 resolve_app(name).ok_or_else(|| ExecError::AppNotFound(name.to_string()))?;
             println!("target : {target}");
-            open_resolved(kind, target).map_err(|e| ExecError::Io(e.to_string()))?;
+            open_resolved(&kind, &target).map_err(|e| ExecError::Io(e.to_string()))?;
         }
 
         other => return Err(ExecError::UnknownAction(other.to_string())),
@@ -240,25 +241,23 @@ pub fn try_fast_match(transcript: &str) -> Option<(&'static str, Option<String>)
 }
 
 pub fn maximize_focused_window() -> Result<(), String> {
-    unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd.0.is_null() {
-            return Err("no active window".into());
-        }
-        let _ = ShowWindow(hwnd, SW_MAXIMIZE);
-    }
-    Ok(())
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    press_combo(&mut enigo, Key::Meta, Key::UpArrow)
 }
 
 pub fn minimize_focused_window() -> Result<(), String> {
-    unsafe {
-        let hwnd = GetForegroundWindow();
-        if hwnd.0.is_null() {
-            return Err("no active window".into());
-        }
-        let _ = ShowWindow(hwnd, SW_MINIMIZE);
-    }
-    Ok(())
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    // First press restores if maximized, second press minimizes.
+    // Pressing twice guarantees minimize regardless of current state.
+    press_combo(&mut enigo, Key::Meta, Key::DownArrow)?;
+    sleep(Duration::from_millis(80));
+    press_combo(&mut enigo, Key::Meta, Key::DownArrow)
+}
+
+/// Minimizes all top-level visible windows (like Win+D / "show desktop").
+pub fn minimize_all_windows() -> Result<(), String> {
+    let mut enigo = Enigo::new(&Settings::default()).map_err(|e| e.to_string())?;
+    press_combo(&mut enigo, Key::Meta, Key::Unicode('d'))
 }
 
 /// Minimizes the first visible top-level window belonging to a process
@@ -313,21 +312,6 @@ pub fn minimize_window_by_app(app_name: &str) -> Result<(), String> {
     }
 }
 
-/// Minimizes all top-level visible windows (like Win+D / "show desktop").
-pub fn minimize_all_windows() -> Result<(), String> {
-    unsafe extern "system" fn enum_proc(hwnd: HWND, _lparam: LPARAM) -> BOOL {
-        if IsWindowVisible(hwnd).as_bool() {
-            let _ = ShowWindow(hwnd, SW_SHOWMINIMIZED);
-        }
-        BOOL(1) // continue
-    }
-
-    unsafe {
-        let _ = EnumWindows(Some(enum_proc), LPARAM(0));
-    }
-    Ok(())
-}
-
 fn strip_trigger<'a>(original: &'a str, lower: &str, trigger: &str) -> Option<&'a str> {
     if !lower.starts_with(trigger) {
         return None;
@@ -376,7 +360,7 @@ pub fn lock_screen() -> Result<(), String> {
     Ok(())
 }
 
-pub fn sleep() -> Result<(), String> {
+pub fn sleep_system() -> Result<(), String> {
     Command::new("rundll32.exe")
         .args(["powrprof.dll,SetSuspendState", "0,1,0"])
         .status()
@@ -401,7 +385,6 @@ pub fn restart() -> Result<(), String> {
 }
 
 pub fn screenshot() -> Result<(), String> {
-    println!("screen shot taken");
     let screens = Screen::all().map_err(|e| e.to_string())?;
     let screen = screens.first().ok_or("no screen found")?;
     let image = screen.capture().map_err(|e| e.to_string())?;

@@ -14,10 +14,10 @@ impl WhisperEngine {
         Ok(Self { ctx })
     }
 
-    pub fn transcribe(&self, samples: &[f32], language: &str) -> anyhow::Result<String> {
+    pub fn transcribe(&self, samples: &[f32]) -> anyhow::Result<String> {
         let mut state = self.ctx.create_state()?;
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
-        params.set_language(Some(language));
+        params.set_language(None);
         params.set_print_progress(false);
         params.set_print_special(false);
         params.set_print_realtime(false);

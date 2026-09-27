@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import LanguageSelector from "./components/OptionSelector";
 import "./App.css";
 
 type TaskStatus =
@@ -99,10 +98,6 @@ function App() {
           No internet connection
         </div>
       )}
-
-      <div className="top-bar">
-        <LanguageSelector />
-      </div>
 
       <div className="shell">
         <div className="mic-stage">

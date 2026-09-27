@@ -34,6 +34,9 @@ const PROTECTED_DIRS: &[&str] = &[
     "appdata",
 ];
 
+/// Flat alias->exe_path index built from app_cache.json (display names + aliases).
+pub static DISCOVERED_APPS: OnceLock<Mutex<HashMap<String, String>>> = OnceLock::new();
+
 static LAST_FOLDER: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 pub fn get_last_folder() -> Option<PathBuf> {
@@ -210,6 +213,7 @@ pub fn is_dangerous(path: &Path) -> bool {
 }
 
 // value = (launch_kind, target)
+#[derive(Debug, Clone, Copy)]
 pub enum LaunchKind {
     Exe,
     UriShell,
@@ -317,28 +321,42 @@ pub fn resolve_operation_app_name(mut op: Operation) -> Operation {
     op
 }
 
-pub fn resolve_app(input: &str) -> Option<&(LaunchKind, &'static str)> {
-    APP_ALIASES.get(input.trim().to_lowercase().as_str())
+pub fn init_discovered_apps() {
+    DISCOVERED_APPS.set(Mutex::new(HashMap::new())).ok();
 }
 
-// pub fn open_resolved(kind: &LaunchKind, target: &str) -> std::io::Result<()> {
-//     match kind {
-//         LaunchKind::Exe => {
-//             silent_command("cmd")
-//                 .args(["/C", "start", "", target])
-//                 .spawn()?;
-//         }
-//         LaunchKind::UriShell => {
-//             std::process::Command::new("cmd")
-//                 .args(["/C", "start", "", target])
-//                 .spawn()?;
-//         }
-//         LaunchKind::Msc => {
-//             std::process::Command::new("mmc").arg(target).spawn()?;
-//         }
-//     }
-//     Ok(())
-// }
+/// Rebuilds the flat index from an AppCache (call after load or after sync).
+pub fn refresh_discovered_apps(cache: &crate::system::types::AppCache) {
+    let mut flat = HashMap::new();
+    for (name, entry) in &cache.apps {
+        flat.insert(name.to_lowercase(), entry.exe_path.clone());
+        for alias in &entry.aliases {
+            flat.insert(alias.to_lowercase(), entry.exe_path.clone());
+        }
+    }
+    if let Some(map) = DISCOVERED_APPS.get() {
+        *map.lock().unwrap() = flat;
+    }
+}
+
+pub fn resolve_app(input: &str) -> Option<(LaunchKind, String)> {
+    let key = input.trim().to_lowercase();
+
+    // hardcoded system tools take priority
+    if let Some((kind, target)) = APP_ALIASES.get(key.as_str()) {
+        return Some((*kind, target.to_string()));
+    }
+
+    // fall back to discovered apps
+    if let Some(map) = DISCOVERED_APPS.get() {
+        let guard = map.lock().unwrap();
+        if let Some(path) = guard.get(&key) {
+            return Some((LaunchKind::Exe, path.clone()));
+        }
+    }
+
+    None
+}
 
 pub fn open_resolved(kind: &LaunchKind, target: &str) -> std::io::Result<()> {
     match kind {
@@ -376,11 +394,11 @@ pub fn open_browser_search(browser: Option<&str>, query: &str) -> anyhow::Result
     match browser {
         Some(name) => {
             let exe = match resolve_app(name) {
-                Some((_, exe)) => *exe,
-                None => name,
+                Some((_, exe)) => exe,
+                None => name.to_string(),
             };
             if silent_command("cmd")
-                .args(["/C", "start", "", exe, &url])
+                .args(["/C", "start", "", &exe, &url])
                 .spawn()
                 .is_err()
             {
@@ -399,30 +417,13 @@ pub fn open_browser_search(browser: Option<&str>, query: &str) -> anyhow::Result
     }
 }
 
-// pub fn resolve_browser_exe_path(name: &str) -> Option<String> {
-//     // Reuse your APP_ALIASES resolution, but chromiumoxide needs a real path,
-//     // not a bare name — Windows `where` resolves it via PATH.
-//     let exe = match resolve_app(name) {
-//         Some((_, exe)) => *exe,
-//         None => name,
-//     };
-//     let output = std::process::Command::new("where").arg(exe).output().ok()?;
-//     if output.status.success() {
-//         String::from_utf8(output.stdout)
-//             .ok()
-//             .map(|s| s.lines().next().unwrap_or("").to_string())
-//     } else {
-//         None
-//     }
-// }
-
 pub fn resolve_browser_exe_path(name: &str) -> Option<String> {
     let exe = match resolve_app(name) {
-        Some((_, exe)) => *exe,
-        None => name,
+        Some((_, exe)) => exe,
+        None => name.to_string(),
     };
     let exe_with_ext = if exe.to_lowercase().ends_with(".exe") {
-        exe.to_string()
+        exe.clone()
     } else {
         format!("{exe}.exe")
     };
@@ -517,7 +518,7 @@ pub async fn handle_transcribe_failure(
         "Sorry, I couldn't process that. Please try again."
     };
 
-    let _ = tts::speak(app, spoken , "en");
+    let _ = tts::speak(app, spoken, "en");
     state::set_status(TaskStatus::Idle);
 
     err_msg
