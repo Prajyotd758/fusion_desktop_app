@@ -44,6 +44,9 @@ pub fn load_memory_state(app_data_dir: &PathBuf) -> MemoryState {
 }
 
 /// Call after each successful online dispatch that returns `remember` items.
+const MAX_ENTRIES_PER_FILE: usize = 100;
+const MAX_CONTENT_CHARS: usize = 200;
+
 pub fn apply_remember(
     app_data_dir: &PathBuf,
     state: &Mutex<MemoryState>,
@@ -55,17 +58,39 @@ pub fn apply_remember(
     let user_data_path = app_data_dir.join("user_data.md");
     let memory_path = app_data_dir.join("memory.md");
 
-    let mut guard = state.lock().unwrap();
+    let mut guard = match state.lock() {
+        Ok(g) => g,
+        Err(e) => {
+            eprintln!("[apply_remember] lock failed: {e}");
+            return;
+        }
+    };
+    let mem = &mut *guard;
+
     for item in items {
-        let path = match item.target.as_str() {
-            "user_data" => &user_data_path,
-            _ => &memory_path,
+        let content = item.content.replace(['\n', '\r'], " ").trim().to_string();
+        if content.is_empty() || content.chars().count() > MAX_CONTENT_CHARS {
+            continue;
+        }
+
+        let (list, path) = match item.target.as_str() {
+            "user_data" => (&mut mem.user_data, &user_data_path),
+            _ => (&mut mem.memory, &memory_path),
         };
-        if append_md_line(path, &item.content).is_ok() {
-            match item.target.as_str() {
-                "user_data" => guard.user_data.push(item.content),
-                _ => guard.memory.push(item.content),
-            }
+
+        if list
+            .iter()
+            .any(|l| l.to_lowercase() == content.to_lowercase())
+        {
+            continue;
+        }
+        if list.len() >= MAX_ENTRIES_PER_FILE {
+            eprintln!("[apply_remember] cap reached, skipping: {content}");
+            continue;
+        }
+
+        if append_md_line(path, &content).is_ok() {
+            list.push(content);
         }
     }
 }

@@ -8,7 +8,8 @@
       "properties": {
         "intent": { "type": "string", "enum": ["system", "chat", "error"] },
         "response": { "type": "string" },
-        "response_language": { "type": "string", "default": "en" },
+        "response_language": { "type": "string", "enum": ["en", "hi", "mr"] },
+        "needs_clarification": { "type": "boolean", "default": false },
         "operations": {
           "type": "array",
           "maxItems": 10,
@@ -75,6 +76,18 @@
               "text": { "type": "string" }
             },
             "required": ["action"]
+          }
+        },
+        "remember": {
+          "type": "array",
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "properties": {
+              "target": { "type": "string", "enum": ["user_data", "memory"] },
+              "content": { "type": "string" }
+            },
+            "required": ["target", "content"]
           }
         }
       },

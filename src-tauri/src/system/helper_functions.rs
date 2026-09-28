@@ -11,7 +11,9 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::path::{Component, Path};
 use std::process::Command;
-use std::sync::{Mutex, OnceLock};
+use std::sync::OnceLock;
+use std::sync::Mutex;
+use std::time::Duration;
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -526,4 +528,15 @@ pub async fn handle_transcribe_failure(
 
 pub fn groq_key() -> String {
     std::env::var("GROQ_API_KEY").unwrap_or_default()
+}
+
+pub fn http_client() -> &'static reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(20))
+            .build()
+            .expect("failed to build http client")
+    })
 }

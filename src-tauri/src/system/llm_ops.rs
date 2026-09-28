@@ -69,7 +69,7 @@ pub fn handle_llm_response(app: &AppHandle, llm_output: &str) -> String {
                 parsed.operations.len()
             );
             state::set_status(TaskStatus::Executing);
-            let result = execute_operations(app, &parsed.operations, &lang);
+            let result = execute_operations(app, &parsed.operations, &lang, &parsed.response);
             state::set_last_operations(parsed.operations.clone());
             result
         }
@@ -89,14 +89,19 @@ pub fn handle_llm_response(app: &AppHandle, llm_output: &str) -> String {
     result
 }
 
-pub fn execute_operations(app: &AppHandle, operations: &[Operation], lang: &str) -> String {
+pub fn execute_operations(
+    app: &AppHandle,
+    operations: &[Operation],
+    lang: &str,
+    fallback: &str,
+) -> String {
     for op in operations {
         match execute_operation(app, op, lang) {
             Ok(_) => continue,
             Err(e) => return format!("Command failed: {e}"),
         }
     }
-    "Done".into()
+    fallback.to_string()
 }
 
 fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), String> {

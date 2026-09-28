@@ -33,6 +33,8 @@ pub struct LlmResponse {
     pub response_language: String,
     #[serde(default)]
     pub remember: Vec<RememberItem>,
+    #[serde(default)]
+    pub needs_clarification: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

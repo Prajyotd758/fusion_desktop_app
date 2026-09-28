@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use strsim::jaro_winkler;
 use tauri::Manager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -35,17 +36,10 @@ pub fn load(app: &tauri::AppHandle) -> Vec<UserCommand> {
 
     match fs::read_to_string(&path) {
         Ok(raw) => match serde_json::from_str::<Vec<UserCommand>>(&raw) {
-            Ok(commands) => {
-
-                commands
-            }
-            Err(e) => {
-                Vec::new()
-            }
+            Ok(commands) => commands,
+            Err(_e) => Vec::new(),
         },
-        Err(e) => {
-            Vec::new()
-        }
+        Err(_e) => Vec::new(),
     }
 }
 
@@ -67,6 +61,55 @@ pub fn save(app: &tauri::AppHandle, commands: &[UserCommand]) -> Result<(), Stri
             Err(e.to_string())
         }
     }
+}
+
+/// Finds the best custom-command match for the given transcript, or None.
+/// Guards against the false-positive matching strsim alone allows:
+/// - very short keywords are excluded from fuzzy matching entirely (a 3-4
+///   char keyword can accidentally score >0.85 against almost anything)
+/// - keyword and transcript must be reasonably close in length
+/// - similarity threshold raised from 0.85 to 0.92
+pub fn find_matching_command<'a>(
+    commands: &'a [UserCommand],
+    text_normalized: &str,
+) -> Option<&'a UserCommand> {
+    const MIN_KEYWORD_LEN: usize = 5;
+    const SIMILARITY_THRESHOLD: f64 = 0.92;
+    const MAX_LEN_DIFF_RATIO: f64 = 0.3;
+
+    // Exact match first, always wins regardless of length.
+    if let Some(c) = commands
+        .iter()
+        .find(|c| normalize_text(&c.keyword) == text_normalized)
+    {
+        return Some(c);
+    }
+
+    commands
+        .iter()
+        .filter_map(|c| {
+            let keyword_normalized = normalize_text(&c.keyword);
+
+            if keyword_normalized.len() < MIN_KEYWORD_LEN {
+                return None;
+            }
+
+            let len_diff =
+                (keyword_normalized.len() as isize - text_normalized.len() as isize).abs() as f64;
+            let max_len = keyword_normalized.len().max(text_normalized.len()) as f64;
+            if max_len == 0.0 || len_diff / max_len > MAX_LEN_DIFF_RATIO {
+                return None;
+            }
+
+            let score = jaro_winkler(&keyword_normalized, text_normalized);
+            if score >= SIMILARITY_THRESHOLD {
+                Some((c, score))
+            } else {
+                None
+            }
+        })
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
+        .map(|(c, _)| c)
 }
 
 #[tauri::command]
