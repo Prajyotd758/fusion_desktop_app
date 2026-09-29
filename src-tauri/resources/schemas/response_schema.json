@@ -7,9 +7,8 @@
       "type": "object",
       "properties": {
         "intent": { "type": "string", "enum": ["system", "chat", "error"] },
-        "response": { "type": "string" },
-        "response_language": { "type": "string", "enum": ["en", "hi", "mr"] },
         "needs_clarification": { "type": "boolean", "default": false },
+        "response_language": { "type": "string", "enum": ["en", "hi", "mr"] },
         "operations": {
           "type": "array",
           "maxItems": 10,
@@ -89,7 +88,8 @@
             },
             "required": ["target", "content"]
           }
-        }
+        },
+        "response": { "type": "string" }
       },
       "required": ["intent", "response", "response_language", "operations"]
     }

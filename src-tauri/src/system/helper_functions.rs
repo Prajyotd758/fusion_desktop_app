@@ -8,11 +8,10 @@ use once_cell::sync::Lazy;
 use screenshots::image::ImageOutputFormat;
 use screenshots::Screen;
 use std::collections::HashMap;
-use std::path::PathBuf;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 use std::process::Command;
-use std::sync::OnceLock;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::Duration;
 use windows::Win32::System::ProcessStatus::GetModuleBaseNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
@@ -134,7 +133,7 @@ pub fn default_workspace() -> PathBuf {
 
 pub fn open_with_shell(path: &PathBuf) -> Result<(), String> {
     let status = silent_command("cmd")
-        .args(["/C", "start", "", path.to_str().unwrap_or("")])
+        .args(["/C", "start", "", "/B", path.to_str().unwrap_or("")])
         .status()
         .map_err(|e| e.to_string())?;
     if status.success() {
@@ -371,7 +370,7 @@ pub fn open_resolved(kind: &LaunchKind, target: &str) -> std::io::Result<()> {
             } else {
                 // fallback: bare name, let cmd/start resolve via PATH or App Paths registry
                 silent_command("cmd")
-                    .args(["/C", "start", "", target])
+                    .args(["/C", "start", "", "/B", target])
                     .spawn()?;
             }
         }
@@ -400,19 +399,19 @@ pub fn open_browser_search(browser: Option<&str>, query: &str) -> anyhow::Result
                 None => name.to_string(),
             };
             if silent_command("cmd")
-                .args(["/C", "start", "", &exe, &url])
+                .args(["/C", "start", "", "/B", &exe, &url])
                 .spawn()
                 .is_err()
             {
                 silent_command("cmd")
-                    .args(["/C", "start", "", &url])
+                    .args(["/C", "start", "", "/B", &url])
                     .spawn()?;
             }
             Ok(())
         }
         None => {
             silent_command("cmd")
-                .args(["/C", "start", "", &url])
+                .args(["/C", "start", "", "/B", &url])
                 .spawn()?;
             Ok(())
         }

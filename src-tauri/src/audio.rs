@@ -43,6 +43,30 @@ pub fn take_samples(state: &AudioState) -> Vec<f32> {
     std::mem::take(&mut *state.samples.lock().unwrap())
 }
 
+/// Simple linear-interpolation resampler, mono f32 in, mono f32 out.
+/// Not audiophile-grade, but more than sufficient for STT input.
+fn resample_linear(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate || input.is_empty() {
+        return input.to_vec();
+    }
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = (input.len() as f64 / ratio).ceil() as usize;
+    let mut out = Vec::with_capacity(out_len);
+
+    for i in 0..out_len {
+        let src_pos = i as f64 * ratio;
+        let idx = src_pos.floor() as usize;
+        let frac = (src_pos - idx as f64) as f32;
+
+        if idx + 1 < input.len() {
+            out.push(input[idx] * (1.0 - frac) + input[idx + 1] * frac);
+        } else if idx < input.len() {
+            out.push(input[idx]);
+        }
+    }
+    out
+}
+
 // ---------------------------------------------------------------------
 // Mouse trigger path: ESP32 over serial (already 16kHz mono i16 PCM)
 // ---------------------------------------------------------------------
@@ -219,11 +243,20 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
                 .ok_or_else(|| anyhow!("No input device found"))?;
             let config = device.default_input_config()?;
             let channels = config.channels() as usize;
+            let input_rate: u32 = config.sample_rate().into();
+
+            println!(
+                "[audio] input device config: {} Hz, {} channel(s), format {:?}",
+                input_rate,
+                channels,
+                config.sample_format()
+            );
 
             let err_fn = |err| eprintln!("Stream error: {}", err);
 
             let push = move |mono: Vec<f32>, buf: &Arc<Mutex<Vec<f32>>>| {
-                buf.lock().unwrap().extend(mono);
+                let resampled = resample_linear(&mono, input_rate, SAMPLE_RATE);
+                buf.lock().unwrap().extend(resampled);
             };
 
             let stream = match config.sample_format() {
@@ -291,6 +324,12 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
             let _ = stop_rx.recv();
             drop(stream);
             println!("Recording stopped, samples buffered in memory");
+
+            // DEBUG: dump exactly what's in the buffer to a WAV file for inspection
+            let final_samples = samples_buf.lock().unwrap().clone();
+            if let Err(e) = dump_debug_wav(&final_samples, SAMPLE_RATE) {
+                eprintln!("[audio] debug wav dump failed: {e}");
+            }
             Ok(())
         })();
 
@@ -319,4 +358,32 @@ pub fn stop_recording(state: &AudioState) -> Result<()> {
 
     state.recording.store(false, Ordering::SeqCst);
     result
+}
+
+/// Debug-only: writes the captured (post-resample) buffer to a WAV file
+/// so you can listen to exactly what Whisper is receiving.
+fn dump_debug_wav(samples: &[f32], sample_rate: u32) -> Result<()> {
+    let path = std::env::temp_dir().join("arceus_debug_capture.wav");
+
+    let spec = hound::WavSpec {
+        channels: 1,
+        sample_rate,
+        bits_per_sample: 16,
+        sample_format: hound::SampleFormat::Int,
+    };
+
+    let mut writer = hound::WavWriter::create(&path, spec)?;
+    for &s in samples {
+        let clamped = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
+        writer.write_sample(clamped)?;
+    }
+    writer.finalize()?;
+
+    println!(
+        "[audio] debug wav written: {} ({} samples, {:.2}s)",
+        path.display(),
+        samples.len(),
+        samples.len() as f32 / sample_rate as f32
+    );
+    Ok(())
 }

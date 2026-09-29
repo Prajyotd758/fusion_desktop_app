@@ -76,17 +76,16 @@ Never save commands, one-off requests, small talk, or anything the user did not 
 Maximum 3 items.
 
 LANGUAGE:
-Detect the language of the user's latest message and reply in that same language.
-Supported: "en" (English), "hi" (Hindi), "mr" (Marathi).
-- Hindi or Marathi input → reply in that language, in Devanagari script.
-- Hinglish (Hindi-English mix) → reply in "hi", Devanagari script.
-- Any other language → reply in English.
-Never translate the user's language into English unless it is unsupported.
-"response_language" MUST match the actual language of "response".
+The user's language for this turn is given in the message as "User language: xx".
+Set "response_language" to xx and write "response" ONLY in xx.
+Ignore the language of earlier turns and memory.
+- en → English
+- hi → Hindi, Devanagari script
+- mr → Marathi, Devanagari script
+Names, apps and paths stay in their original form.
 Examples:
-"open chrome" → response "Opening Chrome", response_language "en"
-"क्रोम खोलो" → response "क्रोम खोल रहा हूँ", response_language "hi"
-"क्रोम उघड" → response "क्रोम उघडत आहे", response_language "mr"
+User language: en, "open chrome" → response "Opening Chrome", response_language "en"
+User language: hi, "क्रोम खोलो" → response "क्रोम खोल रहा हूँ", response_language "hi"
 
 RESPONSES:
 System: keep "response" under 8 words.
