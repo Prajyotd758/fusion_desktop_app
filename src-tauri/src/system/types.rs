@@ -58,6 +58,18 @@ pub struct Operation {
     pub keys: String,
     #[serde(default)]
     pub parameters: Option<serde_json::Value>,
+    #[serde(default, deserialize_with = "de_num")]
+    pub ms: i64,
+    #[serde(default, deserialize_with = "de_num")]
+    pub in_secs: i64,
+    #[serde(default)]
+    pub at: String,
+    #[serde(default)]
+    pub cron: String,
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub actions: Vec<Operation>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -85,9 +97,6 @@ pub struct AliasResponse {
 }
 
 impl Operation {
-    /// Pulls values from a stray "parameters" object (if the model nested
-    /// them instead of using flat keys) into the flat fields, for any
-    /// flat field currently empty.
     pub fn normalize(mut self) -> Self {
         if let Some(params) = self.parameters.take() {
             if let Some(obj) = params.as_object() {
@@ -108,8 +117,32 @@ impl Operation {
                 fill!(destination);
                 fill!(text);
                 fill!(keys);
+                fill!(label);
+                fill!(at);
+                fill!(cron);
+
+                let num = |k: &str| {
+                    obj.get(k).and_then(|v| {
+                        v.as_i64()
+                            .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+                    })
+                };
+                if self.ms == 0 {
+                    self.ms = num("ms").unwrap_or(0);
+                }
+                if self.in_secs == 0 {
+                    self.in_secs = num("in_secs").unwrap_or(0);
+                }
+                if self.actions.is_empty() {
+                    if let Some(a) = obj.get("actions") {
+                        if let Ok(v) = serde_json::from_value::<Vec<Operation>>(a.clone()) {
+                            self.actions = v;
+                        }
+                    }
+                }
             }
         }
+        self.actions = self.actions.into_iter().map(Operation::normalize).collect();
         self
     }
 }
@@ -204,4 +237,13 @@ pub struct GroqChoice {
 #[derive(Deserialize)]
 pub struct GroqChoiceMessage {
     pub content: String,
+}
+
+// // accepts 300, "300", null -> i64 (models sometimes quote numbers)
+fn de_num<'de, D: serde::Deserializer<'de>>(d: D) -> Result<i64, D::Error> {
+    use serde::Deserialize;
+    let v = serde_json::Value::deserialize(d)?;
+    Ok(v.as_i64()
+        .or_else(|| v.as_str().and_then(|s| s.trim().parse().ok()))
+        .unwrap_or(0))
 }

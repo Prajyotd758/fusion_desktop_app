@@ -1,3 +1,4 @@
+use crate::browser::browser_search;
 use crate::state::{self, TaskStatus};
 use crate::system::types::Operation;
 use crate::tts;
@@ -241,7 +242,6 @@ pub static APP_ALIASES: Lazy<HashMap<&'static str, (LaunchKind, &'static str)>> 
         ("intellij", (Exe, "idea64.exe")),
         ("intellij idea", (Exe, "idea64.exe")),
         ("pycharm", (Exe, "pycharm64.exe")),
-        // Browsers
         ("chrome", (Exe, "chrome.exe")),
         ("google chrome", (Exe, "chrome.exe")),
         ("firefox", (Exe, "firefox.exe")),
@@ -292,6 +292,7 @@ pub static APP_ALIASES: Lazy<HashMap<&'static str, (LaunchKind, &'static str)>> 
         ("settings", (UriShell, "ms-settings:")),
         ("windows settings", (UriShell, "ms-settings:")),
         ("control panel", (Exe, "control.exe")),
+        ("controlpanel", (Exe, "control.exe")),
         ("task manager", (Exe, "taskmgr.exe")),
         ("file explorer", (Exe, "explorer.exe")),
         ("explorer", (Exe, "explorer.exe")),
@@ -309,18 +310,6 @@ pub static APP_ALIASES: Lazy<HashMap<&'static str, (LaunchKind, &'static str)>> 
         ("snipping tool", (Exe, "SnippingTool.exe")),
     ])
 });
-
-pub fn resolve_operation_app_name(mut op: Operation) -> Operation {
-    if matches!(
-        op.action.as_str(),
-        "open_app" | "close_app" | "open_app_in_folder" | "browser_search"
-    ) {
-        if let Some((_, resolved_name)) = resolve_app(&op.name) {
-            op.name = resolved_name.to_string();
-        }
-    }
-    op
-}
 
 pub fn init_discovered_apps() {
     DISCOVERED_APPS.set(Mutex::new(HashMap::new())).ok();
@@ -343,17 +332,23 @@ pub fn refresh_discovered_apps(cache: &crate::system::types::AppCache) {
 pub fn resolve_app(input: &str) -> Option<(LaunchKind, String)> {
     let key = input.trim().to_lowercase();
 
-    // hardcoded system tools take priority
     if let Some((kind, target)) = APP_ALIASES.get(key.as_str()) {
+        eprintln!("[resolve_app] {key:?} -> ALIAS match, target={target:?}");
         return Some((*kind, target.to_string()));
     }
 
-    // fall back to discovered apps
     if let Some(map) = DISCOVERED_APPS.get() {
         let guard = map.lock().unwrap();
         if let Some(path) = guard.get(&key) {
+            eprintln!("[resolve_app] {key:?} -> DISCOVERED match, path={path:?}");
             return Some((LaunchKind::Exe, path.clone()));
         }
+        eprintln!(
+            "[resolve_app] {key:?} -> not in aliases or discovered apps ({} discovered)",
+            guard.len()
+        );
+    } else {
+        eprintln!("[resolve_app] {key:?} -> not in aliases, DISCOVERED_APPS not initialized yet");
     }
 
     None
@@ -386,94 +381,15 @@ pub fn open_resolved(kind: &LaunchKind, target: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-pub fn open_browser_search(browser: Option<&str>, query: &str) -> anyhow::Result<()> {
-    let url = format!(
-        "https://www.google.com/search?q={}",
-        urlencoding::encode(query)
-    );
-    println!("{}", url);
-    match browser {
-        Some(name) => {
-            let exe = match resolve_app(name) {
-                Some((_, exe)) => exe,
-                None => name.to_string(),
-            };
-            if silent_command("cmd")
-                .args(["/C", "start", "", "/B", &exe, &url])
-                .spawn()
-                .is_err()
-            {
-                silent_command("cmd")
-                    .args(["/C", "start", "", "/B", &url])
-                    .spawn()?;
-            }
-            Ok(())
-        }
-        None => {
-            silent_command("cmd")
-                .args(["/C", "start", "", "/B", &url])
-                .spawn()?;
-            Ok(())
-        }
-    }
-}
-
-pub fn resolve_browser_exe_path(name: &str) -> Option<String> {
-    let exe = match resolve_app(name) {
-        Some((_, exe)) => exe,
-        None => name.to_string(),
-    };
-    let exe_with_ext = if exe.to_lowercase().ends_with(".exe") {
-        exe.clone()
-    } else {
-        format!("{exe}.exe")
-    };
-
-    let output = std::process::Command::new("reg")
-        .args([
-            "query",
-            &format!(r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\App Paths\{exe_with_ext}"),
-            "/ve",
-        ])
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
-    }
-
-    String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .find(|l| l.contains("REG_SZ"))
-        .and_then(|l| l.split("REG_SZ").nth(1))
-        .map(|p| p.trim().to_string())
-        .filter(|p| !p.is_empty())
-}
-
 /// Search input, routed by what's currently focused:
 /// - Desktop/unknown -> Windows Search (Win key + type + enter)
 /// - Browser focused -> new tab with Google search results
 // context_search.rs
-
 pub fn contextual_search(target: &str, query: &str) -> anyhow::Result<()> {
     match target.to_lowercase().as_str() {
         "browser" => browser_search(query),
         _ => desktop_search(query), // default / "desktop"
     }
-}
-
-fn browser_search(query: &str) -> anyhow::Result<()> {
-    let mut enigo = Enigo::new(&Settings::default())?;
-
-    enigo.key(Key::Control, Click)?;
-    enigo.key(Key::Unicode('l'), Click)?; // Ctrl+L focuses address bar
-    std::thread::sleep(std::time::Duration::from_millis(200));
-
-    enigo.text(query)?;
-    std::thread::sleep(std::time::Duration::from_millis(1000));
-
-    enigo.key(Key::Return, Click)?;
-    Ok(())
 }
 
 fn desktop_search(query: &str) -> anyhow::Result<()> {

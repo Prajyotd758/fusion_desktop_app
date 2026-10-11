@@ -4,7 +4,6 @@ pub mod helper_functions;
 pub mod llm_ops;
 pub mod path_resolver;
 pub mod types;
-pub mod browser_automation;
 pub mod memory;
 pub mod app_discovery;
 

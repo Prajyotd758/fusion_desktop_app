@@ -324,12 +324,6 @@ pub fn start_recording(state: &AudioState) -> Result<()> {
             let _ = stop_rx.recv();
             drop(stream);
             println!("Recording stopped, samples buffered in memory");
-
-            // DEBUG: dump exactly what's in the buffer to a WAV file for inspection
-            let final_samples = samples_buf.lock().unwrap().clone();
-            if let Err(e) = dump_debug_wav(&final_samples, SAMPLE_RATE) {
-                eprintln!("[audio] debug wav dump failed: {e}");
-            }
             Ok(())
         })();
 
@@ -358,32 +352,4 @@ pub fn stop_recording(state: &AudioState) -> Result<()> {
 
     state.recording.store(false, Ordering::SeqCst);
     result
-}
-
-/// Debug-only: writes the captured (post-resample) buffer to a WAV file
-/// so you can listen to exactly what Whisper is receiving.
-fn dump_debug_wav(samples: &[f32], sample_rate: u32) -> Result<()> {
-    let path = std::env::temp_dir().join("arceus_debug_capture.wav");
-
-    let spec = hound::WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: hound::SampleFormat::Int,
-    };
-
-    let mut writer = hound::WavWriter::create(&path, spec)?;
-    for &s in samples {
-        let clamped = (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16;
-        writer.write_sample(clamped)?;
-    }
-    writer.finalize()?;
-
-    println!(
-        "[audio] debug wav written: {} ({} samples, {:.2}s)",
-        path.display(),
-        samples.len(),
-        samples.len() as f32 / sample_rate as f32
-    );
-    Ok(())
 }

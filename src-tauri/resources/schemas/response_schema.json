@@ -9,6 +9,11 @@
         "intent": { "type": "string", "enum": ["system", "chat", "error"] },
         "needs_clarification": { "type": "boolean", "default": false },
         "response_language": { "type": "string", "enum": ["en", "hi", "mr"] },
+        "ms": { "type": "integer" },
+        "in_secs": { "type": "integer" },
+        "at": { "type": "string" },
+        "cron": { "type": "string" },
+        "label": { "type": "string" },
         "operations": {
           "type": "array",
           "maxItems": 10,
@@ -35,7 +40,8 @@
                   "open_app_in_folder",
                   "write_file",
                   "browser_search",
-                  "browser_open_first_result",
+                  "browser_open_result",
+                  "browser_tab",
                   "contextual_search",
                   "vision_query",
                   "volume_up",
@@ -63,7 +69,12 @@
                   "new_window",
                   "go_back",
                   "go_forward",
-                  "type_text"
+                  "type_text",
+                  "speak",
+                  "delay",
+                  "schedule",
+                  "list_schedules",
+                  "cancel_schedule"
                 ]
               },
               "name": { "type": "string" },

@@ -1,9 +1,11 @@
 mod audio;
+mod browser;
 mod commands;
 mod custom_command;
 mod find_serial;
 mod llm_provider;
 mod resources;
+mod scheduler;
 mod settings;
 mod state;
 mod system;
@@ -80,6 +82,7 @@ pub fn run() {
                 Some(Modifiers::ALT | Modifiers::CONTROL | Modifiers::SHIFT),
                 Code::Digit9,
             );
+            scheduler::init(app.handle().clone());
 
             let handle = app.handle().clone();
             app.global_shortcut()
@@ -115,12 +118,14 @@ pub fn run() {
                         }
                     });
                 })?;
-
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             check_internet,
             save_custom_command,
+            scheduler::get_schedules,
+            scheduler::cancel_schedule,
+            scheduler::cancel_pending_cmd,
         ])
         .run(tauri::generate_context!())
         .expect("error running app");

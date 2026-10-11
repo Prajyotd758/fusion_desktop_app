@@ -1,11 +1,11 @@
+use crate::browser;
 use crate::llm_provider;
+use crate::scheduler;
 use crate::state::{self, TaskStatus};
 use crate::system::app_context;
-use crate::system::browser_automation;
 use crate::system::fast_match;
 use crate::system::helper_functions::{
     default_workspace, is_dangerous, open_resolved, open_with_shell, resolve_app,
-    resolve_operation_app_name,
 };
 use crate::system::path_resolver::{
     resolve_base, resolve_full_path, resolve_target, sanitize_name,
@@ -45,7 +45,6 @@ pub fn handle_llm_response(app: &AppHandle, llm_output: &str) -> String {
         .operations
         .into_iter()
         .map(Operation::normalize)
-        .map(resolve_operation_app_name)
         .collect();
 
     let lang = parsed.response_language.clone();
@@ -104,7 +103,7 @@ pub fn execute_operations(
     fallback.to_string()
 }
 
-fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), String> {
+pub fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), String> {
     match p.action.as_str() {
         "create_folder" => {
             let name = sanitize_name(&p.name);
@@ -144,10 +143,6 @@ fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), S
             }
 
             fs::write(&path, &p.text).map_err(|e| e.to_string())
-        }
-        "open_folder" | "open_file" => {
-            let path = resolve_target(&p.location, &p.name, &p.extension);
-            open_with_shell(&path)
         }
         "delete_folder" => {
             let path = resolve_target(&p.location, &p.name, &p.extension);
@@ -195,34 +190,78 @@ fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), S
             Ok(())
         }
         "copy_folder" => Err("folder copying not supported yet".into()),
+        "open_folder" | "open_file" => {
+            let path = resolve_target(&p.location, &p.name, &p.extension);
+            open_with_shell(&path)
+        }
         "open_app_in_folder" => {
             let name = sanitize_name(&p.name);
+            eprintln!(
+                "[open_app_in_folder] llm name={:?} sanitized={name:?} location={:?}",
+                p.name, p.location
+            );
             if name.is_empty() {
+                eprintln!("[open_app_in_folder] FAIL: empty app name");
                 return Err("no app name given".into());
             }
             let folder = if p.location.is_empty() {
-                crate::system::helper_functions::get_focused_explorer_path()
-                    .unwrap_or_else(crate::system::helper_functions::desktop_dir)
+                let f = crate::system::helper_functions::get_focused_explorer_path();
+                eprintln!("[open_app_in_folder] no location given, focused explorer path = {f:?}");
+                f.unwrap_or_else(crate::system::helper_functions::desktop_dir)
             } else {
                 resolve_base(&p.location)
             };
-            app_context::open_app_in_folder(&name, &folder)?;
+            eprintln!(
+                "[open_app_in_folder] opening {name:?} in {}",
+                folder.display()
+            );
+            match app_context::open_app_in_folder(&name, &folder) {
+                Ok(m) => eprintln!("[open_app_in_folder] OK: {m}"),
+                Err(e) => {
+                    eprintln!("[open_app_in_folder] FAIL: {e}");
+                    return Err(e);
+                }
+            }
             Ok(())
         }
         "open_app" => {
+            let raw = p.name.trim().to_lowercase();
             let name = sanitize_name(&p.name);
+            eprintln!(
+                "[open_app] llm name={:?} raw={raw:?} sanitized={name:?} location={:?}",
+                p.name, p.location
+            );
             if name.is_empty() {
+                eprintln!("[open_app] FAIL: empty app name");
                 return Err("no app name given".into());
             }
 
             if !p.location.is_empty() {
                 let folder = resolve_base(&p.location);
-                app_context::open_app_in_folder(&name, &folder)?;
+                eprintln!("[open_app] opening {name:?} in folder {}", folder.display());
+                let r = app_context::open_app_in_folder(&name, &folder);
+                match &r {
+                    Ok(m) => eprintln!("[open_app] OK: {m}"),
+                    Err(e) => eprintln!("[open_app] FAIL (in folder): {e}"),
+                }
+                r?;
                 Ok(())
             } else {
-                let (kind, target) =
-                    resolve_app(&name).ok_or_else(|| format!("could not resolve app: {name}"))?;
-                open_resolved(&kind, &target).map_err(|e| e.to_string())?;
+                let (kind, target) = match resolve_app(&raw).or_else(|| resolve_app(&name)) {
+                    Some(r) => r,
+                    None => {
+                        eprintln!("[open_app] FAIL: could not resolve {raw:?} / {name:?}");
+                        return Err(format!("could not resolve app: {name}"));
+                    }
+                };
+                eprintln!("[open_app] launching kind={kind:?} target={target:?}");
+                match open_resolved(&kind, &target) {
+                    Ok(_) => eprintln!("[open_app] OK: launched {name:?}"),
+                    Err(e) => {
+                        eprintln!("[open_app] FAIL: launch error for {target:?}: {e}");
+                        return Err(e.to_string());
+                    }
+                }
                 Ok(())
             }
         }
@@ -242,31 +281,79 @@ fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), S
             }
         }
         "browser_search" => {
-            let browser = if p.name.is_empty() {
-                None
-            } else {
-                Some(p.name.as_str())
-            };
-            helper_functions::open_browser_search(browser, &p.text).map_err(|e| e.to_string())?;
-            Ok(())
-        }
-        "browser_open_first_result" => {
-            let browser_name = if p.name.is_empty() {
+            let name = if p.name.is_empty() {
                 "chrome"
             } else {
                 p.name.as_str()
             };
-            let exe_path = helper_functions::resolve_browser_exe_path(browser_name)
-                .ok_or_else(|| format!("could not locate {browser_name}"))?;
-            let query = p.text.clone();
-
+            let exe = browser::resolve_browser_exe_path(name)
+                .ok_or_else(|| format!("could not locate {name}"))?;
+            let q = p.text.clone();
             tokio::task::block_in_place(|| {
-                tokio::runtime::Handle::current().block_on(async move {
-                    browser_automation::search_and_open_first(&exe_path, &query, true).await
-                })
+                tokio::runtime::Handle::current().block_on(browser::search(&exe, &q))
             })
             .map_err(|e| e.to_string())?;
             Ok(())
+        }
+        "browser_open_result" => {
+            let n: usize = p
+                .text
+                .trim()
+                .parse()
+                .map_err(|_| "bad result number".to_string())?;
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(browser::open_result(n))
+            })
+            .map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        "speak" => {
+            if p.text.trim().is_empty() {
+                return Err("nothing to say".into());
+            }
+            let _ = tts::speak(app, &p.text, lang);
+            Ok(())
+        }
+        "delay" => {
+            let ms = p.ms.clamp(0, 30_000) as u64;
+            tokio::task::block_in_place(|| {
+                std::thread::sleep(std::time::Duration::from_millis(ms))
+            });
+            Ok(())
+        }
+        "schedule" => {
+            let when = scheduler::When {
+                in_secs: (p.in_secs > 0).then_some(p.in_secs),
+                at: (!p.at.is_empty()).then(|| p.at.clone()),
+                cron: (!p.cron.is_empty()).then(|| p.cron.clone()),
+            };
+            let acts: Vec<Operation> = p
+                .actions
+                .iter()
+                .cloned()
+                .map(Operation::normalize)
+                .collect();
+            let v = scheduler::add_job(app, &when, p.label.clone(), acts, lang)?;
+            // let _ = tts::speak(app, &format!("Scheduled: {}", v.label), lang);
+            Ok(())
+        }
+        "list_schedules" => {
+            let n = scheduler::list_jobs().len();
+            let msg = if n == 0 {
+                "No scheduled tasks.".to_string()
+            } else {
+                format!("{n} scheduled tasks.")
+            };
+            let _ = tts::speak(app, &msg, lang);
+            Ok(())
+        }
+        "cancel_schedule" => {
+            // job removed already and countdown running -> cancel the countdown
+            if scheduler::cancel_by_query(app, &p.text) > 0 || scheduler::cancel_pending(None) {
+                Ok(())
+            } else {
+                Err("no matching scheduled task".into())
+            }
         }
         "vision_query" => {
             let img_b64 = helper_functions::capture_screen_base64()?;
@@ -290,6 +377,13 @@ fn execute_operation(app: &AppHandle, p: &Operation, lang: &str) -> Result<(), S
         }
         "contextual_search" => {
             helper_functions::contextual_search(&p.location, &p.text).map_err(|e| e.to_string())?;
+            Ok(())
+        }
+        "browser_tab" => {
+            tokio::task::block_in_place(|| {
+                tokio::runtime::Handle::current().block_on(browser::switch_tab(&p.text))
+            })
+            .map_err(|e| e.to_string())?;
             Ok(())
         }
         "type_text" => fast_match::type_text(&p.text),
